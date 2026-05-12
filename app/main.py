@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.services.config import OUTPUT_DIR, ensure_runtime_dirs
+from app.services.copilot import ops_copilot_summary
 from app.services.handoff import generate_handoff_report, get_latest_handoff_report
 from app.services.mlops import pipeline_state, promote_latest, rollback, simulate_drift, simulate_retraining
 from app.services.pipeline import run_inspection
@@ -100,6 +101,11 @@ def latest_handoff() -> dict[str, object]:
 @app.post("/api/v1/handoff/report")
 def handoff_report(request: HandoffReportRequest) -> dict[str, object]:
     return generate_handoff_report(request)
+
+
+@app.get("/api/v1/copilot/ops")
+def ops_copilot(line_id: str = "ALL") -> dict[str, object]:
+    return ops_copilot_summary(line_id=line_id)
 
 
 @app.get("/api/v1/mlops/state")

@@ -14,6 +14,7 @@
 - 드리프트 감지, 재학습, 모델 승급, 롤백 시뮬레이션
 - 교대 근무 인수인계용 Daily Report 생성
 - 설비 특이사항, Scrap Risk, 미처리 항목, 다음 근무자 체크리스트 저장
+- Fab Ops Copilot: 설비 메모리, 조치 추천, near-miss 기록, 엔지니어 판단 이력
 
 ## 주요 API
 
@@ -25,6 +26,7 @@
 - `POST /api/v1/models/rollback`: 모델 롤백
 - `POST /api/v1/handoff/report`: 교대 인수인계 Daily Report 생성
 - `GET /api/v1/handoff/latest`: 최신 Daily Report 조회
+- `GET /api/v1/copilot/ops`: 운영 Copilot 요약 조회
 
 ## 실행
 
@@ -57,3 +59,4 @@ npm run build
 - `app/services/reporting.py`: 로컬 리포트 엔진을 Gemini API 호출로 교체
 - `app/services/storage.py`: SQLite를 RDS PostgreSQL로 교체
 - `app/services/mlops.py`: 시뮬레이션을 MLflow, Evidently, Airflow, EventBridge 연동으로 교체
+- `app/services/copilot.py`: MES/FDC/SPC, shift log, 설비 PM 이력과 연결해 실제 운영 Copilot으로 확장

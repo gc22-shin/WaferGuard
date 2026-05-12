@@ -52,6 +52,10 @@ def main() -> None:
     state = client.get("/api/v1/mlops/state")
     assert state.status_code == 200, state.text
 
+    copilot = client.get("/api/v1/copilot/ops?line_id=LINE-7")
+    assert copilot.status_code == 200, copilot.text
+    assert copilot.json()["action_recommendations"]
+
     print(
         {
             "health": health.json()["status"],
@@ -59,6 +63,7 @@ def main() -> None:
             "risk": payload["risk_level"],
             "drift_status": drift.json()["status"],
             "handoff_id": handoff.json()["id"],
+            "copilot_actions": len(copilot.json()["action_recommendations"]),
             "models": len(state.json()["models"]),
         }
     )

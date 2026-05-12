@@ -2,15 +2,19 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
+  BrainCircuit,
   CheckCircle2,
   ClipboardList,
   FileText,
   Gauge,
   GitBranch,
+  History,
   Play,
   RefreshCcw,
   RotateCcw,
   ShieldCheck,
+  ShieldAlert,
+  Wrench,
   Workflow,
 } from "lucide-react";
 import {
@@ -75,6 +79,7 @@ export default function App() {
   const [state, setState] = useState(null);
   const [latest, setLatest] = useState(null);
   const [handoff, setHandoff] = useState(null);
+  const [copilot, setCopilot] = useState(null);
   const [form, setForm] = useState({
     wafer_id: "WF-DEMO-001",
     line_id: "LINE-7",
@@ -92,16 +97,18 @@ export default function App() {
   const [error, setError] = useState("");
 
   async function refresh() {
-    const [m, rows, mlops, report] = await Promise.all([
+    const [m, rows, mlops, report, ops] = await Promise.all([
       api("/api/v1/metrics"),
       api("/api/v1/inspections?limit=20"),
       api("/api/v1/mlops/state"),
       apiOptional("/api/v1/handoff/latest"),
+      apiOptional(`/api/v1/copilot/ops?line_id=${encodeURIComponent(form.line_id || "ALL")}`),
     ]);
     setMetrics(m);
     setInspections(rows);
     setState(mlops);
     setHandoff(report);
+    setCopilot(ops);
     setLatest((current) => current || rows[0] || null);
   }
 
@@ -414,6 +421,80 @@ export default function App() {
             )}
           </div>
         </div>
+      </section>
+
+      <section className="panel ops-panel">
+        <div className="panel-title">
+          <div>
+            <p>Fab Ops Copilot</p>
+            <h2>설비 메모리와 Scrap 방지 조치</h2>
+          </div>
+          <BrainCircuit size={21} />
+        </div>
+        {copilot ? (
+          <>
+            <div className="ops-headline">
+              <ShieldAlert size={18} />
+              <strong>{copilot.headline}</strong>
+            </div>
+            <div className="ops-grid">
+              <section>
+                <h3><Wrench size={15} /> Equipment Memory</h3>
+                <div className="ops-list">
+                  {copilot.equipment_memory.length === 0 ? (
+                    <p>아직 반복 설비 패턴 없음</p>
+                  ) : (
+                    copilot.equipment_memory.map((item) => (
+                      <div className="ops-item" key={item.equipment_id}>
+                        <strong>{item.equipment_id} / {item.main_pattern}</strong>
+                        <span>{item.memory_note}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+              <section>
+                <h3><ClipboardList size={15} /> Action Recommendation</h3>
+                <div className="ops-list">
+                  {copilot.action_recommendations.slice(0, 3).map((item) => (
+                    <div className="ops-item" key={`${item.priority}-${item.inspection_id || item.equipment_id}`}>
+                      <strong>{item.priority} / {item.owner}</strong>
+                      <span>{item.recommended_action}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <section>
+                <h3><ShieldAlert size={15} /> Near-miss Log</h3>
+                <div className="ops-list">
+                  {copilot.near_miss_log.length === 0 ? (
+                    <p>현재 near-miss 기록 없음</p>
+                  ) : (
+                    copilot.near_miss_log.slice(0, 3).map((item) => (
+                      <div className="ops-item" key={item.inspection_id}>
+                        <strong>{item.wafer_id} / {item.defect_type}</strong>
+                        <span>{item.scrap_prevention_note}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </section>
+              <section>
+                <h3><History size={15} /> Human Decision Trace</h3>
+                <div className="ops-list">
+                  {copilot.human_decision_trace.slice(0, 3).map((item) => (
+                    <div className="ops-item" key={item.inspection_id}>
+                      <strong>{item.ai_prediction} {"->"} {item.engineer_decision}</strong>
+                      <span>{item.review_note}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </>
+        ) : (
+          <div className="empty-state compact">검사 데이터가 쌓이면 운영 Copilot 요약이 표시됩니다.</div>
+        )}
       </section>
 
       <section className="analytics-grid">

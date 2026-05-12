@@ -13,6 +13,8 @@
 - [x] 교대 인수인계용 Daily Report API 작성
 - [x] 설비 특이사항, Scrap Risk, 다음 근무자 체크리스트 생성 로직 작성
 - [x] 대시보드에 Daily Report 패널 추가
+- [x] Fab Ops Copilot API 작성
+- [x] 설비 메모리, 조치 추천, near-miss, 엔지니어 판단 이력 패널 추가
 
 ## 남은 확인
 
@@ -30,3 +32,4 @@
 - Codex 내장 브라우저에서 `http://127.0.0.1:5174` 렌더링 확인
 - `샘플 검사 실행` 버튼 클릭 후 최신 검사 결과, Grad-CAM, 리포트, High Risk/검토 큐 갱신 확인
 - `POST /api/v1/handoff/report` smoke test 통과
+- `GET /api/v1/copilot/ops` smoke test 통과
