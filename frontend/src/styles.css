@@ -21,7 +21,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -192,6 +193,130 @@ h2 {
   margin-top: 14px;
 }
 
+.handoff-panel {
+  margin-top: 14px;
+}
+
+.handoff-layout {
+  display: grid;
+  grid-template-columns: 0.95fr 1.55fr;
+  gap: 16px;
+}
+
+.handoff-controls {
+  display: grid;
+  align-content: start;
+  gap: 13px;
+}
+
+.note-field {
+  margin-top: 2px;
+}
+
+.handoff-output {
+  min-width: 0;
+}
+
+.handoff-summary {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #d7dee8;
+  border-radius: 7px;
+  background: #f8fafc;
+  padding: 14px;
+  margin-bottom: 13px;
+}
+
+.handoff-summary strong {
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+.scrap-risk {
+  width: fit-content;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.scrap-High {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.scrap-Medium {
+  color: #92400e;
+  background: #fef3c7;
+}
+
+.scrap-Low {
+  color: #065f46;
+  background: #d1fae5;
+}
+
+.handoff-sections {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.handoff-sections section {
+  border: 1px solid #e2e8f0;
+  border-radius: 7px;
+  padding: 13px;
+  background: #ffffff;
+}
+
+.handoff-sections h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.handoff-sections p,
+.handoff-sections li,
+.handoff-item span {
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.handoff-sections ul {
+  padding-left: 18px;
+  margin: 0;
+}
+
+.handoff-item {
+  display: grid;
+  gap: 4px;
+  border-bottom: 1px solid #edf2f7;
+  padding: 8px 0;
+}
+
+.handoff-item:first-of-type {
+  padding-top: 0;
+}
+
+.handoff-item:last-of-type {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.handoff-markdown {
+  margin: 13px 0 0;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid #d7dee8;
+  border-radius: 7px;
+  background: #0f172a;
+  color: #e2e8f0;
+  padding: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .panel {
   padding: 18px;
 }
@@ -219,7 +344,8 @@ label {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid #cbd5e1;
   border-radius: 7px;
@@ -227,6 +353,12 @@ select {
   background: #f8fafc;
   color: #111827;
   min-height: 40px;
+}
+
+textarea {
+  min-height: 92px;
+  resize: vertical;
+  line-height: 1.45;
 }
 
 .control-panel .button-row {
@@ -419,6 +551,11 @@ tbody tr:hover {
   .main-grid {
     grid-template-columns: 1fr;
   }
+
+  .handoff-layout,
+  .handoff-sections {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 680px) {
@@ -436,7 +573,9 @@ tbody tr:hover {
   .stats-grid,
   .analytics-grid,
   .field-grid,
-  .image-strip {
+  .image-strip,
+  .handoff-layout,
+  .handoff-sections {
     grid-template-columns: 1fr;
   }
 

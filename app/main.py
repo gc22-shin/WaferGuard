@@ -5,10 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.services.config import OUTPUT_DIR, ensure_runtime_dirs
+from app.services.handoff import generate_handoff_report, get_latest_handoff_report
 from app.services.mlops import pipeline_state, promote_latest, rollback, simulate_drift, simulate_retraining
 from app.services.pipeline import run_inspection
 from app.services.schemas import (
     DriftRequest,
+    HandoffReportRequest,
     InspectRequest,
     PromoteRequest,
     RetrainRequest,
@@ -85,6 +87,19 @@ def review(inspection_id: str, request: ReviewRequest) -> dict[str, object]:
 @app.get("/api/v1/metrics")
 def service_metrics() -> dict[str, object]:
     return metrics()
+
+
+@app.get("/api/v1/handoff/latest")
+def latest_handoff() -> dict[str, object]:
+    report = get_latest_handoff_report()
+    if report is None:
+        raise HTTPException(status_code=404, detail="No handoff report yet")
+    return report
+
+
+@app.post("/api/v1/handoff/report")
+def handoff_report(request: HandoffReportRequest) -> dict[str, object]:
+    return generate_handoff_report(request)
 
 
 @app.get("/api/v1/mlops/state")

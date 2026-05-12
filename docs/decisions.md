@@ -15,3 +15,7 @@ PRD와 AWS 계획서의 핵심 원칙에 맞춰 SageMaker, Bedrock, Rekognition 
 ## D-004. 프론트엔드는 React + Recharts로 만든다
 
 PRD의 React 대시보드 요구사항과 운영 메트릭 시각화를 반영하기 위해 Vite 기반 React 앱과 Recharts를 사용한다.
+
+## D-005. 인수인계는 생성 시점의 리포트를 저장한다
+
+교대 근무 사이 정보 파편화를 막으려면 최신 데이터만 다시 계산해서 보여주는 것보다, 근무자가 생성한 시점의 Daily Report를 별도 기록으로 남기는 편이 안전하다. 그래서 `handoff_reports` 테이블에 요약 JSON과 Markdown을 함께 저장한다.

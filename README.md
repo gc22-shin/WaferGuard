@@ -12,6 +12,19 @@
 - 한국어 자연어 리포트
 - SQLite 검사 이력 저장
 - 드리프트 감지, 재학습, 모델 승급, 롤백 시뮬레이션
+- 교대 근무 인수인계용 Daily Report 생성
+- 설비 특이사항, Scrap Risk, 미처리 항목, 다음 근무자 체크리스트 저장
+
+## 주요 API
+
+- `POST /api/v1/inspect`: 웨이퍼 검사 실행
+- `GET /api/v1/metrics`: 운영 메트릭 조회
+- `POST /api/v1/mlops/drift`: 드리프트 이벤트 시뮬레이션
+- `POST /api/v1/mlops/retrain`: 재학습 시뮬레이션
+- `POST /api/v1/models/promote`: Staging 모델 승급
+- `POST /api/v1/models/rollback`: 모델 롤백
+- `POST /api/v1/handoff/report`: 교대 인수인계 Daily Report 생성
+- `GET /api/v1/handoff/latest`: 최신 Daily Report 조회
 
 ## 실행
 

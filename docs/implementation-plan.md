@@ -30,3 +30,11 @@
 - Frontend build
 - 백엔드 health check
 - 대시보드 로컬 접속 확인
+
+## 5단계: 인수인계 표준화
+
+- 검사 이력 기반 설비 특이사항 추출
+- Scrap Risk 자동 판정
+- 미처리 High Risk/검토 큐 항목 정리
+- 다음 근무자 체크리스트 생성
+- 생성된 Daily Report를 DB에 저장하고 대시보드에서 조회

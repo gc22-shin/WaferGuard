@@ -45,3 +45,11 @@ class PromoteRequest(BaseModel):
 
 class RollbackRequest(BaseModel):
     reason: str = Field(default="F1 score degradation alarm", max_length=300)
+
+
+class HandoffReportRequest(BaseModel):
+    shift_from: Literal["day", "swing", "night"] = "day"
+    shift_to: Literal["day", "swing", "night"] = "night"
+    line_id: str = Field(default="ALL", min_length=2, max_length=64)
+    operator: str = Field(default="shift-lead", min_length=1, max_length=64)
+    note: str = Field(default="", max_length=700)

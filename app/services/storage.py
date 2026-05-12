@@ -79,6 +79,19 @@ def init_db() -> None:
                 content TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS handoff_reports (
+                id TEXT PRIMARY KEY,
+                shift_from TEXT NOT NULL,
+                shift_to TEXT NOT NULL,
+                line_id TEXT NOT NULL,
+                operator TEXT NOT NULL,
+                headline TEXT NOT NULL,
+                scrap_risk TEXT NOT NULL,
+                report_json TEXT NOT NULL,
+                markdown TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
             """
         )
         count = conn.execute("SELECT COUNT(*) AS count FROM model_registry").fetchone()["count"]
@@ -137,6 +150,19 @@ def list_inspections(limit: int = 20) -> list[dict[str, object]]:
             "SELECT * FROM inspections ORDER BY created_at DESC LIMIT ?",
             (limit,),
         ).fetchall()
+    return [_inspection_to_dict(row) for row in rows]
+
+
+def list_inspections_for_handoff(line_id: str, limit: int = 50) -> list[dict[str, object]]:
+    query = "SELECT * FROM inspections"
+    params: tuple[object, ...] = ()
+    if line_id != "ALL":
+        query += " WHERE line_id = ?"
+        params = (line_id,)
+    query += " ORDER BY created_at DESC LIMIT ?"
+    params = (*params, limit)
+    with connect() as conn:
+        rows = conn.execute(query, params).fetchall()
     return [_inspection_to_dict(row) for row in rows]
 
 
@@ -242,6 +268,39 @@ def insert_alert(severity: str, channel: str, content: str) -> None:
             """,
             (alert_id, severity, channel, content, utc_now()),
         )
+
+
+def insert_handoff_report(report: dict[str, object]) -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO handoff_reports (
+                id, shift_from, shift_to, line_id, operator, headline,
+                scrap_risk, report_json, markdown, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                report["id"],
+                report["shift_from"],
+                report["shift_to"],
+                report["line_id"],
+                report["operator"],
+                report["headline"],
+                report["scrap_risk"],
+                json.dumps(report, ensure_ascii=False),
+                report["markdown"],
+                report["created_at"],
+            ),
+        )
+
+
+def latest_handoff_report() -> dict[str, object] | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT report_json FROM handoff_reports ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+    return json.loads(row["report_json"]) if row else None
 
 
 def metrics() -> dict[str, object]:

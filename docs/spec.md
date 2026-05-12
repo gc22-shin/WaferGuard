@@ -17,6 +17,7 @@ WaferGuard는 웨이퍼 결함 검사 결과를 운영자가 빠르게 이해하
 - 최신 결과: 웨이퍼 이미지, Grad-CAM overlay, 리포트, 승인/검토 버튼
 - Action Queue: 고위험 검토 대기 목록
 - Analytics: 결함 분포, 위험도 추이, 모델 파이프라인 상태
+- Daily Report: 교대 근무자 인수인계, 설비 특이사항, Scrap Risk, 다음 근무자 체크리스트
 - Ledger: 최근 검사 이력
 
 ## API
@@ -31,12 +32,15 @@ WaferGuard는 웨이퍼 결함 검사 결과를 운영자가 빠르게 이해하
 - `POST /api/v1/mlops/retrain`
 - `POST /api/v1/models/promote`
 - `POST /api/v1/models/rollback`
+- `POST /api/v1/handoff/report`
+- `GET /api/v1/handoff/latest`
 
 ## 데이터
 
 - SQLite: `outputs/waferguard.db`
 - 이미지 산출물: `outputs/images`
 - 결함 유형: Center, Donut, Edge-Loc, Edge-Ring, Loc, Random, Scratch, Near-full, None
+- 인수인계 리포트: `handoff_reports` 테이블에 생성 시점의 요약 JSON과 Markdown 저장
 
 ## 성공 기준
 
@@ -44,3 +48,4 @@ WaferGuard는 웨이퍼 결함 검사 결과를 운영자가 빠르게 이해하
 - 샘플 검사 실행 시 이미지, overlay, 리포트, 이력이 생성된다.
 - 드리프트 이벤트가 재학습 job과 Staging 모델을 만든다.
 - 모델 승급과 롤백이 대시보드에 반영된다.
+- Daily Report가 설비 특이사항과 미처리 항목을 표준 형식으로 남긴다.

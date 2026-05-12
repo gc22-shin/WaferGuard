@@ -3,6 +3,8 @@ import {
   Activity,
   AlertTriangle,
   CheckCircle2,
+  ClipboardList,
+  FileText,
   Gauge,
   GitBranch,
   Play,
@@ -43,6 +45,14 @@ async function api(path, options = {}) {
   return response.json();
 }
 
+async function apiOptional(path) {
+  try {
+    return await api(path);
+  } catch {
+    return null;
+  }
+}
+
 function Stat({ icon: Icon, label, value, tone }) {
   return (
     <section className={`stat stat-${tone}`}>
@@ -64,24 +74,34 @@ export default function App() {
   const [inspections, setInspections] = useState([]);
   const [state, setState] = useState(null);
   const [latest, setLatest] = useState(null);
+  const [handoff, setHandoff] = useState(null);
   const [form, setForm] = useState({
     wafer_id: "WF-DEMO-001",
     line_id: "LINE-7",
     equipment_id: "ETCH-02",
     defect_hint: "auto",
   });
+  const [handoffForm, setHandoffForm] = useState({
+    shift_from: "day",
+    shift_to: "night",
+    line_id: "LINE-7",
+    operator: "shift-lead",
+    note: "",
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   async function refresh() {
-    const [m, rows, mlops] = await Promise.all([
+    const [m, rows, mlops, report] = await Promise.all([
       api("/api/v1/metrics"),
       api("/api/v1/inspections?limit=20"),
       api("/api/v1/mlops/state"),
+      apiOptional("/api/v1/handoff/latest"),
     ]);
     setMetrics(m);
     setInspections(rows);
     setState(mlops);
+    setHandoff(report);
     setLatest((current) => current || rows[0] || null);
   }
 
@@ -131,6 +151,13 @@ export default function App() {
           method: "POST",
           body: JSON.stringify({ reason: "demo performance degradation" }),
         });
+      }
+      if (action === "handoff") {
+        const report = await api("/api/v1/handoff/report", {
+          method: "POST",
+          body: JSON.stringify(handoffForm),
+        });
+        setHandoff(report);
       }
       await refresh();
     } catch (err) {
@@ -289,6 +316,104 @@ export default function App() {
             ))}
           </div>
         </section>
+      </section>
+
+      <section className="panel handoff-panel">
+        <div className="panel-title">
+          <div>
+            <p>Daily Report</p>
+            <h2>교대 인수인계 표준 리포트</h2>
+          </div>
+          <FileText size={21} />
+        </div>
+        <div className="handoff-layout">
+          <div className="handoff-controls">
+            <div className="field-grid">
+              <label>
+                From
+                <select
+                  value={handoffForm.shift_from}
+                  onChange={(e) => setHandoffForm({ ...handoffForm, shift_from: e.target.value })}
+                >
+                  <option value="day">오전 근무</option>
+                  <option value="swing">오후 근무</option>
+                  <option value="night">야간 근무</option>
+                </select>
+              </label>
+              <label>
+                To
+                <select
+                  value={handoffForm.shift_to}
+                  onChange={(e) => setHandoffForm({ ...handoffForm, shift_to: e.target.value })}
+                >
+                  <option value="day">오전 근무</option>
+                  <option value="swing">오후 근무</option>
+                  <option value="night">야간 근무</option>
+                </select>
+              </label>
+              <label>
+                Line
+                <input
+                  value={handoffForm.line_id}
+                  onChange={(e) => setHandoffForm({ ...handoffForm, line_id: e.target.value })}
+                />
+              </label>
+              <label>
+                Operator
+                <input
+                  value={handoffForm.operator}
+                  onChange={(e) => setHandoffForm({ ...handoffForm, operator: e.target.value })}
+                />
+              </label>
+            </div>
+            <label className="note-field">
+              근무자 특이사항
+              <textarea
+                value={handoffForm.note}
+                onChange={(e) => setHandoffForm({ ...handoffForm, note: e.target.value })}
+                placeholder="예: ETCH-02 edge ring 증가, 다음 근무자가 PM 이력 확인"
+              />
+            </label>
+            <button className="primary wide" onClick={() => runAction("handoff")} disabled={busy}>
+              <ClipboardList size={17} /> Daily Report 생성
+            </button>
+          </div>
+
+          <div className="handoff-output">
+            {handoff ? (
+              <>
+                <div className="handoff-summary">
+                  <span className={`scrap-risk scrap-${handoff.scrap_risk}`}>Scrap Risk {handoff.scrap_risk}</span>
+                  <strong>{handoff.headline}</strong>
+                </div>
+                <div className="handoff-sections">
+                  <section>
+                    <h3>설비 특이사항</h3>
+                    {handoff.equipment_watch.length === 0 ? (
+                      <p>현재 특이 설비 없음</p>
+                    ) : (
+                      handoff.equipment_watch.map((item) => (
+                        <div className="handoff-item" key={`${item.equipment_id}-${item.main_defect}`}>
+                          <strong>{item.equipment_id} / {item.main_defect}</strong>
+                          <span>{item.required_action}</span>
+                        </div>
+                      ))
+                    )}
+                  </section>
+                  <section>
+                    <h3>다음 근무자 체크리스트</h3>
+                    <ul>
+                      {handoff.next_shift_checklist.map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                  </section>
+                </div>
+                <pre className="handoff-markdown">{handoff.markdown}</pre>
+              </>
+            ) : (
+              <div className="empty-state compact">Daily Report를 생성하면 교대 인수인계 내용이 여기에 저장됩니다.</div>
+            )}
+          </div>
+        </div>
       </section>
 
       <section className="analytics-grid">
