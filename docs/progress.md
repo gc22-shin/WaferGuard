@@ -15,6 +15,9 @@
 - [x] 대시보드에 Daily Report 패널 추가
 - [x] Fab Ops Copilot API 작성
 - [x] 설비 메모리, 조치 추천, near-miss, 엔지니어 판단 이력 패널 추가
+- [x] Shift Copilot Chat 추가
+- [x] 교대 시간 자동 초안 생성 UI 추가
+- [x] Daily Report 초안 수정 저장과 전달 완료 상태 추가
 
 ## 남은 확인
 
@@ -33,3 +36,5 @@
 - `샘플 검사 실행` 버튼 클릭 후 최신 검사 결과, Grad-CAM, 리포트, High Risk/검토 큐 갱신 확인
 - `POST /api/v1/handoff/report` smoke test 통과
 - `GET /api/v1/copilot/ops` smoke test 통과
+- `PUT /api/v1/handoff/{id}` smoke test 통과
+- `POST /api/v1/handoff/{id}/send` smoke test 통과

@@ -4,14 +4,18 @@ import {
   AlertTriangle,
   BrainCircuit,
   CheckCircle2,
+  Clock,
   ClipboardList,
   FileText,
   Gauge,
   GitBranch,
   History,
+  MessageCircle,
   Play,
   RefreshCcw,
   RotateCcw,
+  Save,
+  Send,
   ShieldCheck,
   ShieldAlert,
   Wrench,
@@ -79,7 +83,15 @@ export default function App() {
   const [state, setState] = useState(null);
   const [latest, setLatest] = useState(null);
   const [handoff, setHandoff] = useState(null);
+  const [handoffEdit, setHandoffEdit] = useState({ headline: "", operator_note: "", markdown: "", scrap_risk: "Low" });
   const [copilot, setCopilot] = useState(null);
+  const [autoDraftEnabled, setAutoDraftEnabled] = useState(false);
+  const [shiftDraftTime, setShiftDraftTime] = useState("17:00");
+  const [lastAutoDraftKey, setLastAutoDraftKey] = useState("");
+  const [chatMessages, setChatMessages] = useState([
+    { role: "assistant", text: "교대 리포트 초안 생성, 설비 특이사항 확인, 전달 확인을 도와줄게요." },
+  ]);
+  const [chatInput, setChatInput] = useState("");
   const [form, setForm] = useState({
     wafer_id: "WF-DEMO-001",
     line_id: "LINE-7",
@@ -117,6 +129,44 @@ export default function App() {
     const id = setInterval(() => refresh().catch(() => {}), 5000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    if (!handoff) return;
+    setHandoffEdit({
+      headline: handoff.headline || "",
+      operator_note: handoff.operator_note || "",
+      markdown: handoff.markdown || "",
+      scrap_risk: handoff.scrap_risk || "Low",
+    });
+  }, [handoff?.id]);
+
+  useEffect(() => {
+    const id = setInterval(async () => {
+      if (!autoDraftEnabled || !shiftDraftTime) return;
+      const now = new Date();
+      const today = now.toISOString().slice(0, 10);
+      const hhmm = now.toTimeString().slice(0, 5);
+      const draftKey = `${today}-${shiftDraftTime}-${handoffForm.line_id}`;
+      if (hhmm >= shiftDraftTime && lastAutoDraftKey !== draftKey) {
+        setLastAutoDraftKey(draftKey);
+        try {
+          const report = await api("/api/v1/handoff/report", {
+            method: "POST",
+            body: JSON.stringify({
+              ...handoffForm,
+              scheduled_for: shiftDraftTime,
+              note: handoffForm.note || `${shiftDraftTime} 교대 자동 초안`,
+            }),
+          });
+          setHandoff(report);
+          appendChat("assistant", `${shiftDraftTime} 교대 리포트 초안을 자동 생성했어요. 수정 후 '이대로 전달'을 눌러주세요.`);
+        } catch (err) {
+          setError(err.message);
+        }
+      }
+    }, 15000);
+    return () => clearInterval(id);
+  }, [autoDraftEnabled, shiftDraftTime, handoffForm, lastAutoDraftKey]);
 
   const reviewQueue = useMemo(
     () => inspections.filter((item) => item.risk_level === "High" || item.status === "review_required").slice(0, 5),
@@ -162,7 +212,27 @@ export default function App() {
       if (action === "handoff") {
         const report = await api("/api/v1/handoff/report", {
           method: "POST",
-          body: JSON.stringify(handoffForm),
+          body: JSON.stringify({ ...handoffForm, scheduled_for: shiftDraftTime }),
+        });
+        setHandoff(report);
+      }
+      if (action === "saveHandoff" && handoff) {
+        const savePayload = {
+          headline: handoffEdit.headline,
+          operator_note: handoffEdit.operator_note,
+          scrap_risk: handoffEdit.scrap_risk,
+          markdown: handoffEdit.markdown !== handoff.markdown ? handoffEdit.markdown : null,
+        };
+        const report = await api(`/api/v1/handoff/${handoff.id}`, {
+          method: "PUT",
+          body: JSON.stringify(savePayload),
+        });
+        setHandoff(report);
+      }
+      if (action === "sendHandoff" && handoff) {
+        const report = await api(`/api/v1/handoff/${handoff.id}/send`, {
+          method: "POST",
+          body: JSON.stringify({ sender: handoffForm.operator, message: "이대로 전달합니다." }),
         });
         setHandoff(report);
       }
@@ -171,6 +241,55 @@ export default function App() {
       setError(err.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  function appendChat(role, text) {
+    setChatMessages((messages) => [...messages, { role, text }]);
+  }
+
+  async function handleChatSubmit(event) {
+    event.preventDefault();
+    const text = chatInput.trim();
+    if (!text) return;
+    setChatInput("");
+    appendChat("user", text);
+    try {
+      if (text.includes("리포트") || text.includes("초안")) {
+        const report = await api("/api/v1/handoff/report", {
+          method: "POST",
+          body: JSON.stringify({ ...handoffForm, scheduled_for: shiftDraftTime }),
+        });
+        setHandoff(report);
+        appendChat("assistant", "교대 리포트 초안을 만들었어요. 오른쪽에서 수정하고 '이대로 전달'을 눌러주세요.");
+        return;
+      }
+      if (text.includes("전달")) {
+        if (!handoff) {
+          appendChat("assistant", "전달할 리포트 초안이 아직 없어요. 먼저 초안을 생성해 주세요.");
+          return;
+        }
+        const report = await api(`/api/v1/handoff/${handoff.id}/send`, {
+          method: "POST",
+          body: JSON.stringify({ sender: handoffForm.operator, message: "채팅에서 전달 확인" }),
+        });
+        setHandoff(report);
+        appendChat("assistant", `${report.id} 리포트를 전달 완료 상태로 기록했어요.`);
+        return;
+      }
+      if (text.includes("설비") || text.includes("특이")) {
+        const memory = copilot?.equipment_memory?.[0];
+        appendChat(
+          "assistant",
+          memory
+            ? `${memory.equipment_id}에서 ${memory.main_pattern} 패턴이 중요해요. 먼저 ${memory.first_check}를 확인하세요.`
+            : "현재 반복 설비 패턴은 아직 없어요.",
+        );
+        return;
+      }
+      appendChat("assistant", copilot?.headline || "현재 검사와 인수인계 데이터를 기준으로 위험 항목을 확인 중입니다.");
+    } catch (err) {
+      appendChat("assistant", `처리 중 오류가 났어요: ${err.message}`);
     }
   }
 
@@ -325,6 +444,35 @@ export default function App() {
         </section>
       </section>
 
+      <section className="panel chat-panel">
+        <div className="panel-title">
+          <div>
+            <p>Shift Copilot Chat</p>
+            <h2>교대 리포트 작업 채팅</h2>
+          </div>
+          <MessageCircle size={21} />
+        </div>
+        <div className="chat-layout">
+          <div className="chat-stream">
+            {chatMessages.map((message, index) => (
+              <div className={`chat-bubble chat-${message.role}`} key={`${message.role}-${index}`}>
+                {message.text}
+              </div>
+            ))}
+          </div>
+          <form className="chat-form" onSubmit={handleChatSubmit}>
+            <input
+              value={chatInput}
+              onChange={(event) => setChatInput(event.target.value)}
+              placeholder="예: 교대 리포트 초안 만들어줘 / 이대로 전달해 / 설비 특이사항 알려줘"
+            />
+            <button className="primary" type="submit">
+              <Send size={16} /> 전송
+            </button>
+          </form>
+        </div>
+      </section>
+
       <section className="panel handoff-panel">
         <div className="panel-title">
           <div>
@@ -381,8 +529,26 @@ export default function App() {
                 placeholder="예: ETCH-02 edge ring 증가, 다음 근무자가 PM 이력 확인"
               />
             </label>
+            <div className="schedule-row">
+              <label>
+                자동 초안 시간
+                <input
+                  type="time"
+                  value={shiftDraftTime}
+                  onChange={(event) => setShiftDraftTime(event.target.value)}
+                />
+              </label>
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={autoDraftEnabled}
+                  onChange={(event) => setAutoDraftEnabled(event.target.checked)}
+                />
+                <span><Clock size={15} /> 자동 초안</span>
+              </label>
+            </div>
             <button className="primary wide" onClick={() => runAction("handoff")} disabled={busy}>
-              <ClipboardList size={17} /> Daily Report 생성
+              <ClipboardList size={17} /> Daily Report 초안 생성
             </button>
           </div>
 
@@ -390,8 +556,28 @@ export default function App() {
             {handoff ? (
               <>
                 <div className="handoff-summary">
-                  <span className={`scrap-risk scrap-${handoff.scrap_risk}`}>Scrap Risk {handoff.scrap_risk}</span>
-                  <strong>{handoff.headline}</strong>
+                  <div className="handoff-status-row">
+                    <span className={`scrap-risk scrap-${handoffEdit.scrap_risk}`}>Scrap Risk {handoffEdit.scrap_risk}</span>
+                    <span className={`report-status status-${handoff.status || "draft"}`}>{handoff.status === "sent" ? "전달 완료" : "초안"}</span>
+                  </div>
+                  <label>
+                    핵심 인수인계
+                    <input
+                      value={handoffEdit.headline}
+                      onChange={(event) => setHandoffEdit({ ...handoffEdit, headline: event.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Scrap Risk
+                    <select
+                      value={handoffEdit.scrap_risk}
+                      onChange={(event) => setHandoffEdit({ ...handoffEdit, scrap_risk: event.target.value })}
+                    >
+                      <option value="Low">Low</option>
+                      <option value="Medium">Medium</option>
+                      <option value="High">High</option>
+                    </select>
+                  </label>
                 </div>
                 <div className="handoff-sections">
                   <section>
@@ -414,7 +600,36 @@ export default function App() {
                     </ul>
                   </section>
                 </div>
-                <pre className="handoff-markdown">{handoff.markdown}</pre>
+                <label className="note-field">
+                  작성자 메모
+                  <textarea
+                    value={handoffEdit.operator_note}
+                    onChange={(event) => setHandoffEdit({ ...handoffEdit, operator_note: event.target.value })}
+                  />
+                </label>
+                <label className="note-field">
+                  리포트 본문
+                  <textarea
+                    className="handoff-editor"
+                    value={handoffEdit.markdown}
+                    onChange={(event) => setHandoffEdit({ ...handoffEdit, markdown: event.target.value })}
+                  />
+                </label>
+                <div className="confirm-box">
+                  {handoff.status === "sent" ? (
+                    <strong>{handoff.sent_by || handoffForm.operator}가 {handoff.sent_at || "방금"} 전달 완료로 기록했습니다.</strong>
+                  ) : (
+                    <strong>이대로 다음 근무자에게 전달하시겠습니까?</strong>
+                  )}
+                  <div className="button-row">
+                    <button onClick={() => runAction("saveHandoff")} disabled={busy || !handoff}>
+                      <Save size={16} /> 수정 저장
+                    </button>
+                    <button className="primary" onClick={() => runAction("sendHandoff")} disabled={busy || !handoff || handoff.status === "sent"}>
+                      <Send size={16} /> 이대로 전달
+                    </button>
+                  </div>
+                </div>
               </>
             ) : (
               <div className="empty-state compact">Daily Report를 생성하면 교대 인수인계 내용이 여기에 저장됩니다.</div>

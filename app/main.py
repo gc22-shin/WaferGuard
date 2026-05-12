@@ -6,12 +6,14 @@ from fastapi.staticfiles import StaticFiles
 
 from app.services.config import OUTPUT_DIR, ensure_runtime_dirs
 from app.services.copilot import ops_copilot_summary
-from app.services.handoff import generate_handoff_report, get_latest_handoff_report
+from app.services.handoff import edit_handoff_report, generate_handoff_report, get_latest_handoff_report, send_handoff_report
 from app.services.mlops import pipeline_state, promote_latest, rollback, simulate_drift, simulate_retraining
 from app.services.pipeline import run_inspection
 from app.services.schemas import (
     DriftRequest,
+    HandoffEditRequest,
     HandoffReportRequest,
+    HandoffSendRequest,
     InspectRequest,
     PromoteRequest,
     RetrainRequest,
@@ -101,6 +103,22 @@ def latest_handoff() -> dict[str, object]:
 @app.post("/api/v1/handoff/report")
 def handoff_report(request: HandoffReportRequest) -> dict[str, object]:
     return generate_handoff_report(request)
+
+
+@app.put("/api/v1/handoff/{report_id}")
+def update_handoff_report(report_id: str, request: HandoffEditRequest) -> dict[str, object]:
+    report = edit_handoff_report(report_id, request)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Handoff report not found")
+    return report
+
+
+@app.post("/api/v1/handoff/{report_id}/send")
+def confirm_handoff_report(report_id: str, request: HandoffSendRequest) -> dict[str, object]:
+    report = send_handoff_report(report_id, request)
+    if report is None:
+        raise HTTPException(status_code=404, detail="Handoff report not found")
+    return report
 
 
 @app.get("/api/v1/copilot/ops")

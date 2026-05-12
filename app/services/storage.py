@@ -90,10 +90,18 @@ def init_db() -> None:
                 scrap_risk TEXT NOT NULL,
                 report_json TEXT NOT NULL,
                 markdown TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'draft',
+                scheduled_for TEXT,
+                sent_at TEXT,
+                updated_at TEXT,
                 created_at TEXT NOT NULL
             );
             """
         )
+        _ensure_column(conn, "handoff_reports", "status", "TEXT NOT NULL DEFAULT 'draft'")
+        _ensure_column(conn, "handoff_reports", "scheduled_for", "TEXT")
+        _ensure_column(conn, "handoff_reports", "sent_at", "TEXT")
+        _ensure_column(conn, "handoff_reports", "updated_at", "TEXT")
         count = conn.execute("SELECT COUNT(*) AS count FROM model_registry").fetchone()["count"]
         if count == 0:
             conn.execute(
@@ -271,14 +279,19 @@ def insert_alert(severity: str, channel: str, content: str) -> None:
 
 
 def insert_handoff_report(report: dict[str, object]) -> None:
+    report.setdefault("status", "draft")
+    report.setdefault("scheduled_for", None)
+    report.setdefault("sent_at", None)
+    report.setdefault("updated_at", report["created_at"])
     with connect() as conn:
         conn.execute(
             """
             INSERT INTO handoff_reports (
                 id, shift_from, shift_to, line_id, operator, headline,
-                scrap_risk, report_json, markdown, created_at
+                scrap_risk, report_json, markdown, status, scheduled_for,
+                sent_at, updated_at, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 report["id"],
@@ -290,6 +303,10 @@ def insert_handoff_report(report: dict[str, object]) -> None:
                 report["scrap_risk"],
                 json.dumps(report, ensure_ascii=False),
                 report["markdown"],
+                report["status"],
+                report["scheduled_for"],
+                report["sent_at"],
+                report["updated_at"],
                 report["created_at"],
             ),
         )
@@ -301,6 +318,39 @@ def latest_handoff_report() -> dict[str, object] | None:
             "SELECT report_json FROM handoff_reports ORDER BY created_at DESC LIMIT 1"
         ).fetchone()
     return json.loads(row["report_json"]) if row else None
+
+
+def get_handoff_report(report_id: str) -> dict[str, object] | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT report_json FROM handoff_reports WHERE id = ?",
+            (report_id,),
+        ).fetchone()
+    return json.loads(row["report_json"]) if row else None
+
+
+def save_handoff_report(report: dict[str, object]) -> None:
+    report["updated_at"] = utc_now()
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE handoff_reports
+            SET headline = ?, scrap_risk = ?, report_json = ?, markdown = ?,
+                status = ?, scheduled_for = ?, sent_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                report["headline"],
+                report["scrap_risk"],
+                json.dumps(report, ensure_ascii=False),
+                report["markdown"],
+                report.get("status", "draft"),
+                report.get("scheduled_for"),
+                report.get("sent_at"),
+                report["updated_at"],
+                report["id"],
+            ),
+        )
 
 
 def metrics() -> dict[str, object]:
@@ -349,3 +399,9 @@ def _inspection_to_dict(row: sqlite3.Row) -> dict[str, object]:
     data = dict(row)
     data["cases"] = json.loads(data.pop("cases_json"))
     return data
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")

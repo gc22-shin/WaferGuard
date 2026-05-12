@@ -15,6 +15,8 @@
 - 교대 근무 인수인계용 Daily Report 생성
 - 설비 특이사항, Scrap Risk, 미처리 항목, 다음 근무자 체크리스트 저장
 - Fab Ops Copilot: 설비 메모리, 조치 추천, near-miss 기록, 엔지니어 판단 이력
+- Shift Copilot Chat: 채팅으로 교대 리포트 초안 생성, 설비 특이사항 확인, 전달 확인
+- 교대 시간 자동 초안 생성, 초안 수정 저장, "이대로 전달" 확인 흐름
 
 ## 주요 API
 
@@ -26,6 +28,8 @@
 - `POST /api/v1/models/rollback`: 모델 롤백
 - `POST /api/v1/handoff/report`: 교대 인수인계 Daily Report 생성
 - `GET /api/v1/handoff/latest`: 최신 Daily Report 조회
+- `PUT /api/v1/handoff/{id}`: Daily Report 초안 수정 저장
+- `POST /api/v1/handoff/{id}/send`: Daily Report 전달 완료 기록
 - `GET /api/v1/copilot/ops`: 운영 Copilot 요약 조회
 
 ## 실행

@@ -3,12 +3,14 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 
-from app.services.schemas import HandoffReportRequest
+from app.services.schemas import HandoffEditRequest, HandoffReportRequest, HandoffSendRequest
 from app.services.storage import (
+    get_handoff_report,
     insert_handoff_report,
     latest_handoff_report,
     list_inspections_for_handoff,
     metrics,
+    save_handoff_report,
     utc_now,
 )
 
@@ -61,10 +63,49 @@ def generate_handoff_report(request: HandoffReportRequest) -> dict[str, object]:
         "next_shift_checklist": checklist,
         "operator_note": request.note.strip(),
         "markdown": "",
+        "status": "draft",
+        "scheduled_for": request.scheduled_for,
+        "sent_at": None,
+        "sent_by": None,
+        "send_message": None,
+        "updated_at": None,
         "created_at": utc_now(),
     }
+    report["updated_at"] = report["created_at"]
     report["markdown"] = _markdown(report)
     insert_handoff_report(report)
+    return report
+
+
+def edit_handoff_report(report_id: str, request: HandoffEditRequest) -> dict[str, object] | None:
+    report = get_handoff_report(report_id)
+    if report is None:
+        return None
+    if request.headline is not None:
+        report["headline"] = request.headline.strip()
+    if request.scrap_risk is not None:
+        report["scrap_risk"] = request.scrap_risk
+    if request.operator_note is not None:
+        report["operator_note"] = request.operator_note.strip()
+    if request.markdown is not None:
+        report["markdown"] = request.markdown
+    else:
+        report["markdown"] = _markdown(report)
+    report["status"] = "draft"
+    save_handoff_report(report)
+    return report
+
+
+def send_handoff_report(report_id: str, request: HandoffSendRequest) -> dict[str, object] | None:
+    report = get_handoff_report(report_id)
+    if report is None:
+        return None
+    report["status"] = "sent"
+    report["sent_at"] = utc_now()
+    report["sent_by"] = request.sender
+    report["send_message"] = request.message
+    report["markdown"] = _markdown(report)
+    save_handoff_report(report)
     return report
 
 
@@ -218,6 +259,7 @@ def _markdown(report: dict[str, object]) -> str:
         f"- From: {report['shift_from_label']} -> To: {report['shift_to_label']}\n"
         f"- Line: {report['line_id']}\n"
         f"- Operator: {report['operator']}\n"
+        f"- Status: {report.get('status', 'draft')}\n"
         f"- Scrap Risk: {report['scrap_risk']}\n"
         f"- Inspections: {summary['inspection_count']}\n"
         f"- High Risk: {summary['high_risk_count']}\n"
@@ -227,4 +269,9 @@ def _markdown(report: dict[str, object]) -> str:
         f"## 미처리 항목\n\n{unresolved_lines}\n\n"
         f"## 다음 근무자 체크리스트\n\n{checklist_lines}\n\n"
         f"## 작성자 메모\n\n{note}\n"
+        + (
+            f"\n## 전달 확인\n\n- 전달자: {report.get('sent_by')}\n- 전달 시각: {report.get('sent_at')}\n- 메시지: {report.get('send_message')}\n"
+            if report.get("status") == "sent"
+            else "\n## 전달 확인\n\n- 상태: 초안. 아직 다음 근무자에게 전달되지 않음.\n"
+        )
     )
