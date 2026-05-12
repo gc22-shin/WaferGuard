@@ -1,0 +1,292 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+
+from app.services.config import DB_PATH, MODEL_VERSION, ensure_runtime_dirs
+
+
+def utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def connect() -> sqlite3.Connection:
+    ensure_runtime_dirs()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db() -> None:
+    with connect() as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS inspections (
+                id TEXT PRIMARY KEY,
+                wafer_id TEXT NOT NULL,
+                line_id TEXT NOT NULL,
+                equipment_id TEXT NOT NULL,
+                defect_type TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                risk_score REAL NOT NULL,
+                risk_level TEXT NOT NULL,
+                hotspot_ratio REAL NOT NULL,
+                image_url TEXT NOT NULL,
+                heatmap_url TEXT NOT NULL,
+                overlay_url TEXT NOT NULL,
+                report TEXT NOT NULL,
+                cases_json TEXT NOT NULL,
+                model_version TEXT NOT NULL,
+                status TEXT NOT NULL,
+                engineer_decision TEXT,
+                reviewer TEXT,
+                review_note TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS model_registry (
+                version TEXT PRIMARY KEY,
+                stage TEXT NOT NULL,
+                f1_score REAL NOT NULL,
+                latency_p95_ms INTEGER NOT NULL,
+                registered_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS drift_events (
+                id TEXT PRIMARY KEY,
+                line_id TEXT NOT NULL,
+                drift_score REAL NOT NULL,
+                status TEXT NOT NULL,
+                action_taken TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS retraining_jobs (
+                id TEXT PRIMARY KEY,
+                trigger_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                candidate_version TEXT,
+                f1_score REAL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS alerts (
+                id TEXT PRIMARY KEY,
+                severity TEXT NOT NULL,
+                channel TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+            """
+        )
+        count = conn.execute("SELECT COUNT(*) AS count FROM model_registry").fetchone()["count"]
+        if count == 0:
+            conn.execute(
+                """
+                INSERT INTO model_registry (version, stage, f1_score, latency_p95_ms, registered_at)
+                VALUES (?, 'Production', 0.872, 84, ?)
+                """,
+                (MODEL_VERSION, utc_now()),
+            )
+
+
+def insert_inspection(record: dict[str, object]) -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO inspections (
+                id, wafer_id, line_id, equipment_id, defect_type, confidence,
+                risk_score, risk_level, hotspot_ratio, image_url, heatmap_url,
+                overlay_url, report, cases_json, model_version, status, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record["id"],
+                record["wafer_id"],
+                record["line_id"],
+                record["equipment_id"],
+                record["defect_type"],
+                record["confidence"],
+                record["risk_score"],
+                record["risk_level"],
+                record["hotspot_ratio"],
+                record["image_url"],
+                record["heatmap_url"],
+                record["overlay_url"],
+                record["report"],
+                json.dumps(record["cases"], ensure_ascii=False),
+                record["model_version"],
+                record["status"],
+                record["created_at"],
+            ),
+        )
+
+
+def get_inspection(inspection_id: str) -> dict[str, object] | None:
+    with connect() as conn:
+        row = conn.execute("SELECT * FROM inspections WHERE id = ?", (inspection_id,)).fetchone()
+    return _inspection_to_dict(row) if row else None
+
+
+def list_inspections(limit: int = 20) -> list[dict[str, object]]:
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM inspections ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [_inspection_to_dict(row) for row in rows]
+
+
+def record_review(inspection_id: str, decision: str, reviewer: str, note: str) -> dict[str, object] | None:
+    with connect() as conn:
+        conn.execute(
+            """
+            UPDATE inspections
+            SET engineer_decision = ?, reviewer = ?, review_note = ?, status = ?
+            WHERE id = ?
+            """,
+            (decision, reviewer, note, "reviewed", inspection_id),
+        )
+    return get_inspection(inspection_id)
+
+
+def current_models() -> list[dict[str, object]]:
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM model_registry ORDER BY registered_at DESC"
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def production_model() -> dict[str, object]:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM model_registry WHERE stage = 'Production' ORDER BY registered_at DESC LIMIT 1"
+        ).fetchone()
+    return dict(row) if row else {"version": MODEL_VERSION, "f1_score": 0.872, "latency_p95_ms": 84}
+
+
+def insert_model(version: str, stage: str, f1_score: float, latency_p95_ms: int) -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO model_registry (version, stage, f1_score, latency_p95_ms, registered_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (version, stage, f1_score, latency_p95_ms, utc_now()),
+        )
+
+
+def promote_model(version: str) -> dict[str, object]:
+    with connect() as conn:
+        conn.execute("UPDATE model_registry SET stage = 'Archived' WHERE stage = 'Production'")
+        conn.execute("UPDATE model_registry SET stage = 'Production' WHERE version = ?", (version,))
+    return production_model()
+
+
+def rollback_model(reason: str) -> dict[str, object]:
+    models = current_models()
+    archived = [m for m in models if m["stage"] == "Archived"]
+    target = archived[0] if archived else models[-1]
+    promoted = promote_model(str(target["version"]))
+    insert_alert("critical", "sns/slack", f"자동 롤백 완료: {promoted['version']} / 사유: {reason}")
+    return promoted
+
+
+def insert_drift_event(event: dict[str, object]) -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO drift_events (id, line_id, drift_score, status, action_taken, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event["id"],
+                event["line_id"],
+                event["drift_score"],
+                event["status"],
+                event["action_taken"],
+                event["created_at"],
+            ),
+        )
+
+
+def insert_retraining_job(job: dict[str, object]) -> None:
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO retraining_jobs (id, trigger_type, status, candidate_version, f1_score, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                job["id"],
+                job["trigger_type"],
+                job["status"],
+                job.get("candidate_version"),
+                job.get("f1_score"),
+                job["created_at"],
+            ),
+        )
+
+
+def insert_alert(severity: str, channel: str, content: str) -> None:
+    alert_id = f"ALT-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO alerts (id, severity, channel, content, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (alert_id, severity, channel, content, utc_now()),
+        )
+
+
+def metrics() -> dict[str, object]:
+    with connect() as conn:
+        total = conn.execute("SELECT COUNT(*) AS count FROM inspections").fetchone()["count"]
+        high = conn.execute("SELECT COUNT(*) AS count FROM inspections WHERE risk_level = 'High'").fetchone()["count"]
+        review = conn.execute(
+            "SELECT COUNT(*) AS count FROM inspections WHERE status = 'review_required'"
+        ).fetchone()["count"]
+        avg_conf = conn.execute("SELECT AVG(confidence) AS value FROM inspections").fetchone()["value"]
+        defect_rows = conn.execute(
+            "SELECT defect_type, COUNT(*) AS count FROM inspections GROUP BY defect_type ORDER BY count DESC"
+        ).fetchall()
+        risk_rows = conn.execute(
+            """
+            SELECT id, risk_score, risk_level, created_at
+            FROM inspections
+            ORDER BY created_at DESC LIMIT 20
+            """
+        ).fetchall()
+        drift = conn.execute(
+            "SELECT * FROM drift_events ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+        jobs = conn.execute(
+            "SELECT * FROM retraining_jobs ORDER BY created_at DESC LIMIT 5"
+        ).fetchall()
+        alerts = conn.execute(
+            "SELECT * FROM alerts ORDER BY created_at DESC LIMIT 5"
+        ).fetchall()
+    model = production_model()
+    return {
+        "total_inspections": total,
+        "high_risk_count": high,
+        "review_queue_count": review,
+        "avg_confidence": round(float(avg_conf or 0), 3),
+        "production_model": model,
+        "defect_distribution": [dict(row) for row in defect_rows],
+        "risk_trend": [dict(row) for row in reversed(risk_rows)],
+        "latest_drift_event": dict(drift) if drift else None,
+        "recent_retraining_jobs": [dict(row) for row in jobs],
+        "recent_alerts": [dict(row) for row in alerts],
+    }
+
+
+def _inspection_to_dict(row: sqlite3.Row) -> dict[str, object]:
+    data = dict(row)
+    data["cases"] = json.loads(data.pop("cases_json"))
+    return data

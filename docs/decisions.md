@@ -1,0 +1,17 @@
+# 결정 사항
+
+## D-001. 지금은 로컬 시연 가능한 MVP를 먼저 만든다
+
+문서의 전체 AWS/MLOps 시스템은 4주 개발 계획 수준이다. 현재 빈 repo에서 바로 구현 가능한 첫 산출물은 로컬 MVP다. 이 MVP는 시연 흐름을 먼저 완성하고, 실제 ML/AWS 구성은 나중에 교체 가능한 구조로 남긴다.
+
+## D-002. AWS 관리형 ML/AI 서비스는 사용하지 않는다
+
+PRD와 AWS 계획서의 핵심 원칙에 맞춰 SageMaker, Bedrock, Rekognition 같은 관리형 AI/ML 서비스는 제외한다. 로컬 MVP도 자체 백엔드와 자체 시뮬레이션 파이프라인으로 구성한다.
+
+## D-003. 실제 모델 대신 시뮬레이션 엔진을 사용한다
+
+현재 repo에는 WM-811K 데이터셋과 학습된 PyTorch 모델이 없다. 그래서 MVP에서는 결함 유형별 synthetic wafer map, heatmap, 리포트 엔진을 사용한다. 이후 실제 CNN/Grad-CAM으로 `app/services/pipeline.py` 내부를 교체할 수 있다.
+
+## D-004. 프론트엔드는 React + Recharts로 만든다
+
+PRD의 React 대시보드 요구사항과 운영 메트릭 시각화를 반영하기 위해 Vite 기반 React 앱과 Recharts를 사용한다.
