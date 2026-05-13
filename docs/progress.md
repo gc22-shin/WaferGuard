@@ -19,6 +19,14 @@
 - [x] 교대 시간 자동 초안 생성 UI 추가
 - [x] Daily Report 초안 수정 저장과 전달 완료 상태 추가
 
+## 2026-05-13
+
+- [x] 자동 교대 초안 중복 방지 로직 추가
+- [x] 같은 날짜/라인/근무/시간 기준 `schedule_key` 저장 추가
+- [x] 여러 결함 유형과 엔지니어 리뷰를 만드는 시연 데이터 생성 API 추가
+- [x] 대시보드 상단에 `시연 데이터` 버튼 추가
+- [x] 실행 시 실제 접속 주소를 `outputs/runtime-url.txt`에 저장하도록 개선
+
 ## 남은 확인
 
 - [x] Python dependency 설치
@@ -35,6 +43,8 @@
 - Codex 내장 브라우저에서 `http://127.0.0.1:5174` 렌더링 확인
 - `샘플 검사 실행` 버튼 클릭 후 최신 검사 결과, Grad-CAM, 리포트, High Risk/검토 큐 갱신 확인
 - `POST /api/v1/handoff/report` smoke test 통과
+- `POST /api/v1/demo/seed` smoke test 통과
+- 자동 초안 `reuse_existing` 중복 방지 smoke test 통과
 - `GET /api/v1/copilot/ops` smoke test 통과
 - `PUT /api/v1/handoff/{id}` smoke test 통과
 - `POST /api/v1/handoff/{id}/send` smoke test 통과

@@ -54,6 +54,7 @@ class HandoffReportRequest(BaseModel):
     operator: str = Field(default="shift-lead", min_length=1, max_length=64)
     note: str = Field(default="", max_length=700)
     scheduled_for: str | None = Field(default=None, max_length=16)
+    reuse_existing: bool = False
 
 
 class HandoffEditRequest(BaseModel):
@@ -66,3 +67,9 @@ class HandoffEditRequest(BaseModel):
 class HandoffSendRequest(BaseModel):
     sender: str = Field(default="shift-lead", min_length=1, max_length=64)
     message: str = Field(default="이대로 전달합니다.", max_length=500)
+
+
+class DemoSeedRequest(BaseModel):
+    line_id: str = Field(default="LINE-7", min_length=2, max_length=64)
+    reviewer: str = Field(default="demo-engineer", min_length=1, max_length=64)
+    include_reviews: bool = True

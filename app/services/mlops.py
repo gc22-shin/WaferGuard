@@ -27,7 +27,7 @@ def simulate_drift(request: DriftRequest) -> dict[str, object]:
     low, high = ranges[request.intensity]
     score = round(random.uniform(low, high), 3)
     drifted = score > DRIFT_THRESHOLD
-    event_id = f"DRIFT-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    event_id = f"DRIFT-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
     action = "Airflow retraining DAG queued" if drifted else "No action"
     event = {
         "id": event_id,
@@ -46,11 +46,12 @@ def simulate_drift(request: DriftRequest) -> dict[str, object]:
 
 
 def simulate_retraining(request: RetrainRequest) -> dict[str, object]:
-    version = f"wg-local-v{datetime.now(timezone.utc).strftime('%m%d%H%M')}"
+    stamp = datetime.now(timezone.utc).strftime("%m%d%H%M%S%f")
+    version = f"wg-local-v{stamp}"
     f1_score = round(random.uniform(0.858, 0.902), 3)
     latency = random.randint(72, 96)
     job = {
-        "id": f"TRAIN-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+        "id": f"TRAIN-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}",
         "trigger_type": request.trigger_type,
         "status": "completed",
         "candidate_version": version,

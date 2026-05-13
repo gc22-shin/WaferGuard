@@ -36,6 +36,14 @@ def main() -> None:
     drift = client.post("/api/v1/mlops/drift", json={"intensity": "strong", "line_id": "LINE-7"})
     assert drift.status_code == 200, drift.text
 
+    demo = client.post(
+        "/api/v1/demo/seed",
+        json={"line_id": "LINE-SMOKE", "reviewer": "smoke-test", "include_reviews": True},
+    )
+    assert demo.status_code == 200, demo.text
+    assert demo.json()["created_count"] == 9
+    assert demo.json()["reviewed_count"] == 9
+
     handoff = client.post(
         "/api/v1/handoff/report",
         json={
@@ -67,6 +75,35 @@ def main() -> None:
     assert sent.status_code == 200, sent.text
     assert sent.json()["status"] == "sent"
 
+    scheduled_a = client.post(
+        "/api/v1/handoff/report",
+        json={
+            "shift_from": "day",
+            "shift_to": "night",
+            "line_id": "LINE-SMOKE",
+            "operator": "smoke-test",
+            "note": "자동 초안 중복 방지 테스트",
+            "scheduled_for": "23:59",
+            "reuse_existing": True,
+        },
+    )
+    assert scheduled_a.status_code == 200, scheduled_a.text
+    scheduled_b = client.post(
+        "/api/v1/handoff/report",
+        json={
+            "shift_from": "day",
+            "shift_to": "night",
+            "line_id": "LINE-SMOKE",
+            "operator": "smoke-test",
+            "note": "자동 초안 중복 방지 테스트",
+            "scheduled_for": "23:59",
+            "reuse_existing": True,
+        },
+    )
+    assert scheduled_b.status_code == 200, scheduled_b.text
+    assert scheduled_b.json()["id"] == scheduled_a.json()["id"]
+    assert scheduled_b.json().get("reused_existing") is True
+
     state = client.get("/api/v1/mlops/state")
     assert state.status_code == 200, state.text
 
@@ -80,6 +117,7 @@ def main() -> None:
             "inspection_id": payload["id"],
             "risk": payload["risk_level"],
             "drift_status": drift.json()["status"],
+            "demo_created": demo.json()["created_count"],
             "handoff_id": handoff.json()["id"],
             "handoff_status": sent.json()["status"],
             "copilot_actions": len(copilot.json()["action_recommendations"]),

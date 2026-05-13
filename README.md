@@ -17,10 +17,13 @@
 - Fab Ops Copilot: 설비 메모리, 조치 추천, near-miss 기록, 엔지니어 판단 이력
 - Shift Copilot Chat: 채팅으로 교대 리포트 초안 생성, 설비 특이사항 확인, 전달 확인
 - 교대 시간 자동 초안 생성, 초안 수정 저장, "이대로 전달" 확인 흐름
+- 자동 교대 초안 중복 방지: 같은 날짜/라인/근무/시간 초안은 하나만 재사용
+- 시연 데이터 생성: 여러 결함 유형, 엔지니어 리뷰, 드리프트 이벤트를 한 번에 생성
 
 ## 주요 API
 
 - `POST /api/v1/inspect`: 웨이퍼 검사 실행
+- `POST /api/v1/demo/seed`: 시연용 결함/리뷰/드리프트 데이터 생성
 - `GET /api/v1/metrics`: 운영 메트릭 조회
 - `POST /api/v1/mlops/drift`: 드리프트 이벤트 시뮬레이션
 - `POST /api/v1/mlops/retrain`: 재학습 시뮬레이션
@@ -45,6 +48,7 @@ PowerShell에서 아래 명령을 실행한다.
 - Dashboard: `start.ps1`이 출력하는 주소
 - API docs: `start.ps1`이 출력하는 주소 + `/docs`
 - Health: API 주소 + `/health`
+- 주소 파일: `outputs/runtime-url.txt`
 
 기본값은 Dashboard `http://127.0.0.1:5173`, API `http://127.0.0.1:8000`이다. 이미 사용 중인 포트가 있으면 자동으로 다음 포트를 사용한다.
 

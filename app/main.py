@@ -6,10 +6,12 @@ from fastapi.staticfiles import StaticFiles
 
 from app.services.config import OUTPUT_DIR, ensure_runtime_dirs
 from app.services.copilot import ops_copilot_summary
+from app.services.demo import seed_demo_data
 from app.services.handoff import edit_handoff_report, generate_handoff_report, get_latest_handoff_report, send_handoff_report
 from app.services.mlops import pipeline_state, promote_latest, rollback, simulate_drift, simulate_retraining
 from app.services.pipeline import run_inspection
 from app.services.schemas import (
+    DemoSeedRequest,
     DriftRequest,
     HandoffEditRequest,
     HandoffReportRequest,
@@ -85,6 +87,11 @@ def review(inspection_id: str, request: ReviewRequest) -> dict[str, object]:
     if record is None:
         raise HTTPException(status_code=404, detail="Inspection not found")
     return record
+
+
+@app.post("/api/v1/demo/seed")
+def demo_seed(request: DemoSeedRequest) -> dict[str, object]:
+    return seed_demo_data(request)
 
 
 @app.get("/api/v1/metrics")

@@ -28,10 +28,28 @@ while (Get-NetTCPConnection -LocalPort $ApiPort -ErrorAction SilentlyContinue | 
     $ApiPort += 1
 }
 
+$RuntimeDir = Join-Path $Root "outputs"
+New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
+$DashboardUrl = "http://127.0.0.1:$FrontendPort"
+$ApiUrl = "http://127.0.0.1:$ApiPort"
+$RuntimeInfo = [ordered]@{
+    dashboard = $DashboardUrl
+    api = $ApiUrl
+    docs = "$ApiUrl/docs"
+    started_at = (Get-Date).ToString("o")
+}
+$RuntimeInfo | ConvertTo-Json | Set-Content -Path (Join-Path $RuntimeDir "runtime.json") -Encoding UTF8
+@(
+    "Dashboard: $DashboardUrl",
+    "API docs : $ApiUrl/docs",
+    "Health   : $ApiUrl/health"
+) | Set-Content -Path (Join-Path $RuntimeDir "runtime-url.txt") -Encoding UTF8
+
 Write-Host ""
 Write-Host "WaferGuard 실행 중"
-Write-Host "Dashboard: http://127.0.0.1:$FrontendPort"
-Write-Host "API docs : http://127.0.0.1:$ApiPort/docs"
+Write-Host "Dashboard: $DashboardUrl"
+Write-Host "API docs : $ApiUrl/docs"
+Write-Host "주소 파일: outputs\runtime-url.txt"
 Write-Host "중지하려면 이 창에서 Ctrl+C를 누르세요."
 Write-Host ""
 

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Clock,
   ClipboardList,
+  Database,
   FileText,
   Gauge,
   GitBranch,
@@ -155,11 +156,17 @@ export default function App() {
             body: JSON.stringify({
               ...handoffForm,
               scheduled_for: shiftDraftTime,
+              reuse_existing: true,
               note: handoffForm.note || `${shiftDraftTime} 교대 자동 초안`,
             }),
           });
           setHandoff(report);
-          appendChat("assistant", `${shiftDraftTime} 교대 리포트 초안을 자동 생성했어요. 수정 후 '이대로 전달'을 눌러주세요.`);
+          appendChat(
+            "assistant",
+            report.reused_existing
+              ? `${shiftDraftTime} 교대 리포트 기존 초안을 다시 열었어요. 수정 후 '이대로 전달'을 눌러주세요.`
+              : `${shiftDraftTime} 교대 리포트 초안을 자동 생성했어요. 수정 후 '이대로 전달'을 눌러주세요.`,
+          );
         } catch (err) {
           setError(err.message);
         }
@@ -215,6 +222,24 @@ export default function App() {
           body: JSON.stringify({ ...handoffForm, scheduled_for: shiftDraftTime }),
         });
         setHandoff(report);
+      }
+      if (action === "seedDemo") {
+        result = await api("/api/v1/demo/seed", {
+          method: "POST",
+          body: JSON.stringify({
+            line_id: handoffForm.line_id || form.line_id,
+            reviewer: handoffForm.operator || "demo-engineer",
+            include_reviews: true,
+          }),
+        });
+        const seededRows = result.reviewed?.length ? result.reviewed : result.inspections;
+        if (seededRows?.length) {
+          setLatest(seededRows[seededRows.length - 1]);
+        }
+        appendChat(
+          "assistant",
+          `시연 데이터 ${result.created_count}건과 엔지니어 리뷰 ${result.reviewed_count}건을 생성했어요. 결함 분포와 Human Decision Trace를 확인해보세요.`,
+        );
       }
       if (action === "saveHandoff" && handoff) {
         const savePayload = {
@@ -328,6 +353,9 @@ export default function App() {
         <div className="topbar-actions">
           <button className="icon-button" onClick={refresh} disabled={busy} title="새로고침">
             <RefreshCcw size={18} />
+          </button>
+          <button onClick={() => runAction("seedDemo")} disabled={busy}>
+            <Database size={17} /> 시연 데이터
           </button>
           <button className="primary" onClick={() => runAction("inspect")} disabled={busy}>
             <Play size={17} /> 샘플 검사 실행

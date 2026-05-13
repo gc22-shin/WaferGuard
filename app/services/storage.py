@@ -92,6 +92,7 @@ def init_db() -> None:
                 markdown TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'draft',
                 scheduled_for TEXT,
+                schedule_key TEXT,
                 sent_at TEXT,
                 updated_at TEXT,
                 created_at TEXT NOT NULL
@@ -100,8 +101,16 @@ def init_db() -> None:
         )
         _ensure_column(conn, "handoff_reports", "status", "TEXT NOT NULL DEFAULT 'draft'")
         _ensure_column(conn, "handoff_reports", "scheduled_for", "TEXT")
+        _ensure_column(conn, "handoff_reports", "schedule_key", "TEXT")
         _ensure_column(conn, "handoff_reports", "sent_at", "TEXT")
         _ensure_column(conn, "handoff_reports", "updated_at", "TEXT")
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_handoff_reports_schedule_key
+            ON handoff_reports(schedule_key)
+            WHERE schedule_key IS NOT NULL
+            """
+        )
         count = conn.execute("SELECT COUNT(*) AS count FROM model_registry").fetchone()["count"]
         if count == 0:
             conn.execute(
@@ -281,6 +290,7 @@ def insert_alert(severity: str, channel: str, content: str) -> None:
 def insert_handoff_report(report: dict[str, object]) -> None:
     report.setdefault("status", "draft")
     report.setdefault("scheduled_for", None)
+    report.setdefault("schedule_key", None)
     report.setdefault("sent_at", None)
     report.setdefault("updated_at", report["created_at"])
     with connect() as conn:
@@ -289,9 +299,9 @@ def insert_handoff_report(report: dict[str, object]) -> None:
             INSERT INTO handoff_reports (
                 id, shift_from, shift_to, line_id, operator, headline,
                 scrap_risk, report_json, markdown, status, scheduled_for,
-                sent_at, updated_at, created_at
+                schedule_key, sent_at, updated_at, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 report["id"],
@@ -305,6 +315,7 @@ def insert_handoff_report(report: dict[str, object]) -> None:
                 report["markdown"],
                 report["status"],
                 report["scheduled_for"],
+                report["schedule_key"],
                 report["sent_at"],
                 report["updated_at"],
                 report["created_at"],
@@ -329,6 +340,21 @@ def get_handoff_report(report_id: str) -> dict[str, object] | None:
     return json.loads(row["report_json"]) if row else None
 
 
+def find_handoff_by_schedule_key(schedule_key: str) -> dict[str, object] | None:
+    with connect() as conn:
+        row = conn.execute(
+            """
+            SELECT report_json
+            FROM handoff_reports
+            WHERE schedule_key = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (schedule_key,),
+        ).fetchone()
+    return json.loads(row["report_json"]) if row else None
+
+
 def save_handoff_report(report: dict[str, object]) -> None:
     report["updated_at"] = utc_now()
     with connect() as conn:
@@ -336,7 +362,7 @@ def save_handoff_report(report: dict[str, object]) -> None:
             """
             UPDATE handoff_reports
             SET headline = ?, scrap_risk = ?, report_json = ?, markdown = ?,
-                status = ?, scheduled_for = ?, sent_at = ?, updated_at = ?
+                status = ?, scheduled_for = ?, schedule_key = ?, sent_at = ?, updated_at = ?
             WHERE id = ?
             """,
             (
@@ -346,6 +372,7 @@ def save_handoff_report(report: dict[str, object]) -> None:
                 report["markdown"],
                 report.get("status", "draft"),
                 report.get("scheduled_for"),
+                report.get("schedule_key"),
                 report.get("sent_at"),
                 report["updated_at"],
                 report["id"],

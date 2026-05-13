@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.services.schemas import HandoffEditRequest, HandoffReportRequest, HandoffSendRequest
 from app.services.storage import (
+    find_handoff_by_schedule_key,
     get_handoff_report,
     insert_handoff_report,
     latest_handoff_report,
@@ -27,6 +28,13 @@ def get_latest_handoff_report() -> dict[str, object] | None:
 
 
 def generate_handoff_report(request: HandoffReportRequest) -> dict[str, object]:
+    schedule_key = _schedule_key(request) if request.reuse_existing else None
+    if schedule_key:
+        existing = find_handoff_by_schedule_key(schedule_key)
+        if existing is not None:
+            existing["reused_existing"] = True
+            return existing
+
     rows = list_inspections_for_handoff(request.line_id, limit=60)
     data = metrics()
     high_risk = [row for row in rows if row["risk_level"] == "High"]
@@ -42,7 +50,7 @@ def generate_handoff_report(request: HandoffReportRequest) -> dict[str, object]:
     headline = _headline(rows, high_risk, review_required, equipment_watch)
 
     report = {
-        "id": f"HANDOFF-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}",
+        "id": f"HANDOFF-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}",
         "shift_from": request.shift_from,
         "shift_from_label": SHIFT_LABELS[request.shift_from],
         "shift_to": request.shift_to,
@@ -65,6 +73,7 @@ def generate_handoff_report(request: HandoffReportRequest) -> dict[str, object]:
         "markdown": "",
         "status": "draft",
         "scheduled_for": request.scheduled_for,
+        "schedule_key": schedule_key,
         "sent_at": None,
         "sent_by": None,
         "send_message": None,
@@ -75,6 +84,20 @@ def generate_handoff_report(request: HandoffReportRequest) -> dict[str, object]:
     report["markdown"] = _markdown(report)
     insert_handoff_report(report)
     return report
+
+
+def _schedule_key(request: HandoffReportRequest) -> str | None:
+    if not request.scheduled_for:
+        return None
+    kst_today = datetime.now(timezone(timedelta(hours=9))).date().isoformat()
+    parts = [
+        kst_today,
+        request.line_id.strip(),
+        request.shift_from,
+        request.shift_to,
+        request.scheduled_for.strip(),
+    ]
+    return "|".join(parts)
 
 
 def edit_handoff_report(report_id: str, request: HandoffEditRequest) -> dict[str, object] | None:
