@@ -1,0 +1,59 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this project is
+
+WaferGuard is a **local MVP that simulates semiconductor process-anomaly response**, not an image-classification accuracy project. The whole system models one flow: `situation judgment -> evidence retrieval (RAG) -> quality-risk interpretation -> response action`. Wafer images, Grad-CAM overlays, process/metrology inputs are **synthetic** (structure-validation inputs); only the SQLite-backed workflow state (inspections, reviews, handoff reports, drift/retrain events) is "real". The fixture-based evaluation numbers (`app/data/wm811k_evaluation_fixture.json`, `app/data/defect_rag_eval_set.json`) are risk-analysis fixtures, **not actual model training results**. Keep this real/synthetic/fixture boundary explicit in code and UI — the project deliberately avoids overstating capabilities.
+
+## Commands
+
+The project targets Windows/PowerShell (see `start.ps1`), but the Python backend and Vite frontend run cross-platform.
+
+```bash
+# Backend (FastAPI on :8000)
+python -m venv .venv && .venv/bin/pip install -r requirements.txt
+.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# Frontend (Vite/React on :5173) — needs VITE_API_BASE_URL pointing at the API
+cd frontend && npm install
+VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+
+# Full stack on Windows (auto-picks free ports, writes outputs/runtime-url.txt)
+.\start.ps1
+
+# Smoke test — boots the app in-process via TestClient and exercises the main endpoints
+.venv/bin/python scripts/smoke_test.py
+
+# Frontend production build (also the only frontend "test")
+cd frontend && npm run build
+```
+
+There is no pytest suite or linter configured. `scripts/smoke_test.py` is the integration check; run it after backend changes.
+
+## Architecture
+
+**Backend** is a single FastAPI app (`app/main.py`) that defines every route as a thin wrapper delegating to a service module. All business logic lives in `app/services/`:
+
+- `pipeline.py` — orchestrates `POST /api/v1/inspect`, the core flow. Picks a defect, generates synthetic images, runs RAG, builds process/metrology context, evaluates metrology rules, computes risk, builds the report and Action Card, persists the record, and raises a critical alert on High risk. **Read this first** to understand how the pieces compose.
+- `synthetic_wafer.py` — generates wafer map / Grad-CAM overlay / ROI crop PNGs into `outputs/images/`.
+- `rag.py` — local case-similarity search (Top-3); `rag_eval.py` serves the static RAG eval set.
+- `risk.py` — risk score + level (`compute_risk_score` / `risk_level`).
+- `action_card.py` — metrology rule evaluation and the Action Card (probable causes, extra checks, next actions, human-review rules). Metrology hits feed back into the risk score via `metrology_risk_delta`.
+- `reporting.py` — Korean-language report builder (placeholder for a real AI API call).
+- `mlops.py` — drift/retrain/promote/rollback simulation against the `model_registry` table.
+- `handoff.py` — shift Daily Report lifecycle (generate/edit/send), with dedupe.
+- `copilot.py` — Fab Ops Copilot summary (equipment memory, near-miss, engineer decisions).
+- `automation.py` — agent automation monitor (`/api/v1/automation/*`).
+- `demo.py` — `POST /api/v1/demo/seed` populates defects/reviews/drift for demos.
+- `evaluation.py` / `data_registry.py` — serve the WM-811K fixture and metrology/proxy-dataset manifests.
+- `storage.py` — **all SQLite access**; owns `init_db()` and 6 tables (`inspections`, `model_registry`, `drift_events`, `retraining_jobs`, `alerts`, `handoff_reports`). DB file is `outputs/waferguard.db`.
+- `schemas.py` — all Pydantic request models. `config.py` — paths and tunables (`MODEL_VERSION`, `DRIFT_THRESHOLD`, `LOW_CONFIDENCE_THRESHOLD`).
+
+Generated images are written to `outputs/images/` and served via the static mount at `/outputs`. The entire `outputs/` directory (including the DB) is gitignored and recreated at startup by `ensure_runtime_dirs()`.
+
+**Frontend** is a single large component, `frontend/src/App.jsx` (~1500 lines), using React 19 + Vite + Recharts + lucide-react. It is the operations dashboard that drives every backend endpoint. API base URL comes from `VITE_API_BASE_URL`.
+
+## Extending to real data
+
+The README's "실제 데이터로 확장할 때" section maps each synthetic component to its real-data replacement (e.g. swap `pipeline.py` for a real classifier + Grad-CAM, `reporting.py` for a real AI API call, `storage.py` for a production DB). Preserve these seams when refactoring.
