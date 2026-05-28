@@ -11,11 +11,18 @@ SEVERITY_WEIGHT = {
 }
 
 
-def compute_risk_score(defect_type: str, confidence: float, hotspot_ratio: float, repeat_weight: float) -> float:
+def compute_risk_score(
+    defect_type: str,
+    confidence: float,
+    hotspot_ratio: float,
+    repeat_weight: float,
+    metrology_risk_delta: float = 0.0,
+) -> float:
     severity = SEVERITY_WEIGHT.get(defect_type, 0.5)
     score = 0.40 * confidence + 0.30 * severity + 0.20 * min(hotspot_ratio * 3.5, 1.0) + 0.10 * repeat_weight
     if defect_type == "None":
         score *= 0.35
+    score += metrology_risk_delta
     return round(max(0.0, min(score, 1.0)), 3)
 
 

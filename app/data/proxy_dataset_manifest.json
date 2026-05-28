@@ -1,0 +1,27 @@
+{
+  "source_boundary": "Public proxy 후보 목록입니다. 현재 repo에는 원본 공개 이미지가 포함되어 있지 않으며, 반도체 fab 이미지로 표현하면 안 됩니다.",
+  "local_proxy_dir": "data/proxy_images",
+  "datasets": [
+    {
+      "id": "mvtec-ad",
+      "name": "MVTec AD",
+      "role": "industrial anomaly detection proxy",
+      "portfolio_wording": "반도체 검사 이미지가 아니라 산업 표면 이상 탐지 proxy로 사용",
+      "recommended_use": "ROI crop, heatmap, anomaly localization 화면 구조 검증"
+    },
+    {
+      "id": "mvtec-loco",
+      "name": "MVTec LOCO AD",
+      "role": "logical/structural anomaly detection proxy",
+      "portfolio_wording": "반도체 공정 원인 데이터가 아니라 구조적 이상 탐지 proxy로 사용",
+      "recommended_use": "local/global anomaly 설명 방식 검증"
+    },
+    {
+      "id": "wafer-map-public",
+      "name": "Public wafer map candidates",
+      "role": "wafer-pattern taxonomy proxy",
+      "portfolio_wording": "라이선스와 출처 확인 후 wafer pattern 분류 실험용으로만 사용",
+      "recommended_use": "Center, Donut, Edge-Ring, Scratch 같은 pattern taxonomy 검증"
+    }
+  ]
+}

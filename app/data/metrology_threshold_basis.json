@@ -1,0 +1,54 @@
+{
+  "source_boundary": "Demo SPC-style 기준입니다. 실제 fab spec, control limit, customer requirement가 아닙니다.",
+  "purpose": "이미지 판정을 공정/계측 review로 연결하는 시스템 구조 검증",
+  "fields": [
+    {
+      "field": "cd_nm",
+      "meaning": "Critical Dimension, 핵심 패턴 치수",
+      "demo_target": 32.0,
+      "warning": "29.0-35.0nm 밖",
+      "critical": "27.5-36.5nm 밖",
+      "operator_action": "CD trend와 lithography/etch recipe 변경 이력 확인"
+    },
+    {
+      "field": "overlay_nm",
+      "meaning": "층간 정렬 오차",
+      "demo_target": 4.0,
+      "warning": "5.5nm 이상",
+      "critical": "7.0nm 이상",
+      "operator_action": "align/focus log와 edge/center overlay slice 확인"
+    },
+    {
+      "field": "film_thickness_nm",
+      "meaning": "박막 두께",
+      "demo_target": 88.0,
+      "warning": "80.0-96.0nm 밖",
+      "critical": "74.0-104.0nm 밖",
+      "operator_action": "film uniformity map과 deposition/CMP 조건 확인"
+    },
+    {
+      "field": "roughness_nm",
+      "meaning": "표면 거칠기 proxy",
+      "demo_target": 1.2,
+      "warning": "2.4nm 이상",
+      "critical": "3.5nm 이상",
+      "operator_action": "surface scan ROI와 CMP/cleaning 조건 확인"
+    },
+    {
+      "field": "defect_count",
+      "meaning": "검출 결함 개수 또는 hotspot 기반 proxy",
+      "demo_target": "low",
+      "warning": "180 이상",
+      "critical": "600 이상",
+      "operator_action": "동일 tool 최근 defect count trend 확인"
+    },
+    {
+      "field": "yield_proxy",
+      "meaning": "실제 수율이 아닌 수율 위험 proxy",
+      "demo_target": 0.982,
+      "warning": "0.965 미만",
+      "critical": "0.940 미만",
+      "operator_action": "scrap/rework 영향도와 upstream lot 이력 확인"
+    }
+  ]
+}

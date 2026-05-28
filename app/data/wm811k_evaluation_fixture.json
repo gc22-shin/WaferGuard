@@ -1,0 +1,152 @@
+{
+  "dataset": {
+    "name": "WM-811K",
+    "mode": "local evaluation fixture",
+    "note": "현재 repo에는 실제 WM-811K 원본 파일과 학습 weight가 없으므로, WM-811K defect taxonomy와 현업 리스크 설명을 반영한 평가 샘플로 표시합니다.",
+    "source_boundary": "Fixture 숫자입니다. 실제 학습 결과로 표현하지 않고, 포트폴리오에서는 운영 리스크 평가 설계 근거로만 사용합니다."
+  },
+  "classes": [
+    "Center",
+    "Donut",
+    "Edge-Loc",
+    "Edge-Ring",
+    "Loc",
+    "Random",
+    "Scratch",
+    "Near-full",
+    "None"
+  ],
+  "critical_classes": ["Edge-Ring", "Random", "Scratch", "Near-full"],
+  "confusion_rows": {
+    "Center": [4040, 80, 35, 40, 70, 20, 15, 0, 0],
+    "Donut": [60, 435, 8, 35, 7, 5, 0, 0, 5],
+    "Edge-Loc": [24, 3, 4890, 85, 82, 25, 55, 0, 25],
+    "Edge-Ring": [45, 70, 150, 8900, 90, 100, 30, 10, 285],
+    "Loc": [70, 3, 90, 80, 3200, 75, 30, 0, 45],
+    "Random": [20, 5, 75, 90, 40, 585, 15, 4, 32],
+    "Scratch": [15, 0, 95, 35, 20, 30, 940, 0, 58],
+    "Near-full": [0, 0, 0, 12, 0, 10, 0, 118, 9],
+    "None": [200, 25, 620, 450, 280, 150, 90, 5, 145611]
+  },
+  "critical_misses": [
+    {
+      "actual": "Edge-Ring",
+      "predicted": "None",
+      "severity": "High",
+      "why_problem": "edge 쪽 반복 결함을 정상으로 보내면 edge exclusion, CMP/EBR 조건 이상을 놓쳐 후속 lot까지 같은 문제가 전파될 수 있습니다.",
+      "operator_action": "edge ring 증가 lot은 자동 통과 금지, 동일 설비 edge trend와 PM 이력 확인"
+    },
+    {
+      "actual": "Scratch",
+      "predicted": "Edge-Loc",
+      "severity": "High",
+      "why_problem": "scratch를 edge 위치 문제로만 보면 이송 arm/cassette 접촉 원인을 늦게 찾아 wafer damage가 반복될 수 있습니다.",
+      "operator_action": "선형 Grad-CAM hotspot이 보이면 handling/contact checklist를 우선 실행"
+    },
+    {
+      "actual": "Scratch",
+      "predicted": "None",
+      "severity": "Critical",
+      "why_problem": "물리적 긁힘을 정상으로 판단하면 rework 불가 wafer가 다음 공정으로 넘어가 scrap 비용이 커집니다.",
+      "operator_action": "정상 판정이어도 길고 얇은 hotspot이 있으면 엔지니어 2차 확인으로 승격"
+    },
+    {
+      "actual": "Near-full",
+      "predicted": "None",
+      "severity": "Critical",
+      "why_problem": "wafer 전면 이상은 recipe mismatch나 chamber event 가능성이 높아 정상 통과 시 lot 단위 손실로 이어질 수 있습니다.",
+      "operator_action": "Near-full 의심은 즉시 lot hold, recipe 변경/override 로그 확인"
+    },
+    {
+      "actual": "Random",
+      "predicted": "None",
+      "severity": "Medium",
+      "why_problem": "무작위 particle을 정상으로 보면 클린룸/세정/필터 이벤트를 놓쳐 불량률이 서서히 상승할 수 있습니다.",
+      "operator_action": "random hotspot이 산포되면 particle trend와 세정 이력을 함께 확인"
+    }
+  ],
+  "imbalance_response": [
+    {
+      "title": "평가 기준을 accuracy에서 macro-F1/critical recall로 이동",
+      "detail": "WM-811K는 None class가 커서 accuracy만 보면 정상처럼 보입니다. minority defect recall과 critical miss count를 별도 KPI로 봐야 합니다."
+    },
+    {
+      "title": "class-balanced sampling과 focal loss 적용",
+      "detail": "Near-full, Donut, Random처럼 적은 class가 학습 중 묻히지 않도록 minority batch 비중과 hard example loss를 키웁니다."
+    },
+    {
+      "title": "critical class threshold 별도 운영",
+      "detail": "Scratch, Edge-Ring, Near-full은 confidence가 낮아도 검토 큐로 올려 미검출 비용을 낮춥니다."
+    },
+    {
+      "title": "minority augmentation은 wafer geometry를 보존",
+      "detail": "회전/노이즈/밝기 변화는 쓰되, edge-ring이나 scratch의 위치 의미를 망가뜨리는 증강은 제외합니다."
+    }
+  ],
+  "drift_scenarios": [
+    {
+      "scenario": "Class prior drift",
+      "signal": "특정 주차부터 Edge-Ring 비율이 baseline보다 급증",
+      "risk": "설비 조건 변화가 분류 기준 문제처럼 보이거나, 반대로 실제 설비 이상을 단순 noise로 오해할 수 있음",
+      "response": "line/equipment별 defect mix를 분리해 보고 Daily Report에 반복 설비로 남김"
+    },
+    {
+      "scenario": "Image domain drift",
+      "signal": "검사 장비 조명/스케일 변경 후 Grad-CAM hotspot이 wafer 외곽에 과집중",
+      "risk": "학습 때 보지 못한 영상 조건 때문에 edge defect recall 하락",
+      "response": "장비 변경 시점 기준으로 validation slice를 따로 만들고 재학습 후보 생성"
+    },
+    {
+      "scenario": "Critical minority drift",
+      "signal": "Near-full, Scratch가 적은 수로 갑자기 발생하지만 전체 accuracy는 거의 유지",
+      "risk": "대시보드 평균 지표는 정상인데 scrap 가능 lot만 놓치는 상황",
+      "response": "critical miss count를 알림 조건으로 두고 lot hold checklist와 연결"
+    },
+    {
+      "scenario": "Label policy drift",
+      "signal": "현장 리뷰어가 Edge-Loc과 Scratch 경계를 다르게 판정하기 시작",
+      "risk": "모델 오분류인지 라벨 기준 변경인지 구분이 어려워짐",
+      "response": "Human Decision Trace로 AI 판정과 엔지니어 판단 차이를 누적"
+    }
+  ],
+  "grad_cam_evidence": [
+    {
+      "pattern": "Edge-Ring",
+      "expected_focus": "wafer outer ring 전체 또는 반복 edge band",
+      "bad_sign": "Grad-CAM이 center noise에만 집중하면 edge 조건 이상을 놓칠 수 있음"
+    },
+    {
+      "pattern": "Scratch",
+      "expected_focus": "길고 얇은 선형 hotspot",
+      "bad_sign": "선형 hotspot이 약한데 Edge-Loc으로 판정되면 handling defect 검토 필요"
+    },
+    {
+      "pattern": "Near-full",
+      "expected_focus": "wafer 전면의 넓은 hotspot",
+      "bad_sign": "넓은 hotspot인데 confidence만 낮아 None으로 내려가면 lot hold 누락 위험"
+    },
+    {
+      "pattern": "Random",
+      "expected_focus": "여러 위치에 산포된 hotspot",
+      "bad_sign": "일부 점만 보고 정상으로 내려가면 particle event를 놓칠 수 있음"
+    }
+  ],
+  "quality_risk_explanations": [
+    {
+      "case": "critical defect -> None",
+      "explanation": "가장 위험한 오분류입니다. 불량 wafer가 정상 lot flow로 넘어가 후속 공정, rework, scrap 판단이 늦어집니다."
+    },
+    {
+      "case": "Scratch -> Edge-Loc",
+      "explanation": "둘 다 위치성 결함처럼 보일 수 있지만 조치가 다릅니다. Scratch는 이송/접촉 확인이 우선이고, Edge-Loc은 grip/edge 조건 확인이 우선입니다."
+    },
+    {
+      "case": "Edge-Ring -> Donut/Loc",
+      "explanation": "edge 조건 문제를 중심부/국소 문제로 보면 PM 또는 edge exclusion 조건 확인이 늦어져 같은 설비에서 반복될 수 있습니다."
+    },
+    {
+      "case": "Near-full -> Random",
+      "explanation": "전면 이상을 단순 particle 산포로 보면 recipe mismatch나 chamber event 같은 lot 단위 사고를 작게 취급하게 됩니다."
+    }
+  ]
+}

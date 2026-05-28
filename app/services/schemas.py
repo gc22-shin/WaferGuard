@@ -15,12 +15,37 @@ DefectType = Literal[
     "None",
 ]
 
+ProcessStep = Literal[
+    "Lithography",
+    "Etch",
+    "Deposition",
+    "CMP",
+    "Cleaning",
+    "Inspection",
+]
+
+ImageSource = Literal[
+    "synthetic_wafer",
+    "public_proxy",
+]
+
 
 class InspectRequest(BaseModel):
+    lot_id: str = Field(default="LOT-DEMO-042", min_length=2, max_length=64)
     wafer_id: str = Field(default="WF-DEMO-001", min_length=2, max_length=64)
     line_id: str = Field(default="LINE-7", min_length=2, max_length=64)
     equipment_id: str = Field(default="ETCH-02", min_length=2, max_length=64)
+    process_step: ProcessStep = "Etch"
+    recipe_id: str = Field(default="RCP-ETCH-EDGE-02", min_length=2, max_length=80)
+    image_source: ImageSource = "synthetic_wafer"
+    proxy_dataset: str | None = Field(default=None, max_length=80)
     defect_hint: DefectType | Literal["auto"] = "auto"
+    cd_nm: float = Field(default=32.5, ge=0, le=5000)
+    overlay_nm: float = Field(default=4.2, ge=0, le=5000)
+    film_thickness_nm: float = Field(default=88.0, ge=0, le=100000)
+    roughness_nm: float = Field(default=1.2, ge=0, le=10000)
+    defect_count: int | None = Field(default=None, ge=0, le=1000000)
+    yield_proxy: float = Field(default=0.982, ge=0, le=1)
     operator_note: str = Field(default="", max_length=500)
 
 
@@ -67,6 +92,15 @@ class HandoffEditRequest(BaseModel):
 class HandoffSendRequest(BaseModel):
     sender: str = Field(default="shift-lead", min_length=1, max_length=64)
     message: str = Field(default="이대로 전달합니다.", max_length=500)
+
+
+class AutomationTickRequest(BaseModel):
+    line_id: str = Field(default="LINE-7", min_length=2, max_length=64)
+    operator: str = Field(default="waferguard-agent", min_length=1, max_length=64)
+    shift_from: Literal["day", "swing", "night"] = "day"
+    shift_to: Literal["day", "swing", "night"] = "night"
+    auto_handoff: bool = True
+    drift_check: bool = True
 
 
 class DemoSeedRequest(BaseModel):

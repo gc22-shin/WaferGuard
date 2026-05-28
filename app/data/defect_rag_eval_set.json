@@ -1,0 +1,99 @@
+{
+  "dataset": {
+    "name": "Defect Knowledge RAG Mini Eval",
+    "mode": "local evaluation set",
+    "note": "삼성 AI센터 SW개발용 RAG/Agent 깊이를 보여주기 위한 작은 평가셋입니다. 실제 사내 문서가 아니라 공개/합성 지식 기반 평가 구조입니다."
+  },
+  "guardrails": [
+    "근거 문서 없이 특정 공정 원인을 단정하지 않는다.",
+    "AI 결과는 defect 후보와 후속 확인 항목으로 표현한다.",
+    "critical defect는 confidence가 낮아도 human review로 올린다.",
+    "보안/권한이 필요한 사내 데이터는 검색 가능 범위를 제한한다고 가정한다."
+  ],
+  "questions": [
+    {
+      "id": "RAG-001",
+      "question": "Edge-Ring defect가 증가하면 무엇을 먼저 확인해야 하나?",
+      "expected_answer": "edge exclusion, EBR/CMP edge 조건, 동일 설비 trend, PM 이력을 확인하고 정상 통과 대신 검토 큐로 올린다.",
+      "required_evidence": ["Edge-Ring SOP", "Equipment trend", "PM history"],
+      "fail_if": "edge 원인을 단정하거나 바로 scrap 처리한다고 답함"
+    },
+    {
+      "id": "RAG-002",
+      "question": "Scratch를 None으로 놓치면 왜 위험한가?",
+      "expected_answer": "물리적 damage가 후속 공정으로 넘어가 rework 불가 또는 scrap 비용 증가로 이어질 수 있어 2차 확인이 필요하다.",
+      "required_evidence": ["Scratch SOP", "Critical miss policy"],
+      "fail_if": "accuracy만 언급하고 품질 리스크를 설명하지 않음"
+    },
+    {
+      "id": "RAG-003",
+      "question": "Near-full defect가 Random으로 예측되면 어떤 운영 리스크가 있나?",
+      "expected_answer": "lot 단위 recipe mismatch나 chamber event를 작은 particle 산포로 오해할 수 있어 recipe 변경, override log, lot hold 여부를 확인한다.",
+      "required_evidence": ["Near-full SOP", "Recipe checklist"],
+      "fail_if": "Random particle 점검만 제시함"
+    },
+    {
+      "id": "RAG-004",
+      "question": "WM-811K처럼 None class가 큰 데이터에서 accuracy가 높은데 왜 macro-F1을 보나?",
+      "expected_answer": "None class가 많아 accuracy가 높게 보일 수 있으므로 minority defect recall과 critical miss를 별도 KPI로 봐야 한다.",
+      "required_evidence": ["Evaluation policy", "Class imbalance note"],
+      "fail_if": "overall accuracy만 충분하다고 답함"
+    },
+    {
+      "id": "RAG-005",
+      "question": "Grad-CAM이 Edge-Ring 예측에서 center noise에 집중하면 어떻게 판단해야 하나?",
+      "expected_answer": "edge defect 근거가 약하므로 모델 근거 이상으로 보고 원본 wafer map, edge trend, metrology check를 함께 확인한다.",
+      "required_evidence": ["Grad-CAM check", "Edge-Ring SOP"],
+      "fail_if": "모델 confidence만 근거로 자동 승인함"
+    },
+    {
+      "id": "RAG-006",
+      "question": "drift가 감지됐을 때 바로 모델을 교체해도 되나?",
+      "expected_answer": "아니다. line/equipment별 defect mix, validation slice, critical recall을 확인하고 staging 모델 검증 후 승급 또는 rollback한다.",
+      "required_evidence": ["Drift policy", "Model promotion checklist"],
+      "fail_if": "drift score만 보고 즉시 production 교체"
+    },
+    {
+      "id": "RAG-007",
+      "question": "inspection과 metrology는 어떻게 다르게 설명해야 하나?",
+      "expected_answer": "inspection은 이상 유무와 위치를 찾는 단계이고, metrology는 CD, overlay, thickness 같은 수치로 확인하는 단계다.",
+      "required_evidence": ["Inspection note", "Metrology note"],
+      "fail_if": "둘을 같은 의미로 설명"
+    },
+    {
+      "id": "RAG-008",
+      "question": "AI가 defect 원인을 진단했다고 표현해도 되나?",
+      "expected_answer": "공개/synthetic 데이터 기반 MVP에서는 원인 진단이 아니라 가능 원인 후보와 추가 확인 항목 제시로 표현해야 한다.",
+      "required_evidence": ["Source boundary", "Human review policy"],
+      "fail_if": "실제 fab root cause를 확정했다고 표현"
+    },
+    {
+      "id": "RAG-009",
+      "question": "critical class threshold를 별도로 운영하는 이유는?",
+      "expected_answer": "Scratch, Edge-Ring, Near-full 같은 defect는 놓쳤을 때 비용이 크므로 confidence가 낮아도 review queue로 올려 false negative 비용을 줄인다.",
+      "required_evidence": ["Critical miss policy", "Threshold policy"],
+      "fail_if": "모든 class를 같은 threshold로 처리"
+    },
+    {
+      "id": "RAG-010",
+      "question": "Daily Report가 반도체 AI 프로젝트에서 왜 필요한가?",
+      "expected_answer": "AI 판정이 실제 현장 조치와 다음 근무자 확인으로 이어졌는지 남기는 운영 workflow 증거다.",
+      "required_evidence": ["Handoff policy", "Human decision trace"],
+      "fail_if": "단순 보고서 기능으로만 설명"
+    },
+    {
+      "id": "RAG-011",
+      "question": "metrology CSV를 붙이면 어떤 점이 좋아지나?",
+      "expected_answer": "이미지 판정을 CD, overlay, film thickness, defect count 같은 수치 신호와 연결해 추가 확인 항목을 구체화할 수 있다.",
+      "required_evidence": ["Metrology note", "Action Card schema"],
+      "fail_if": "이미지 분류만으로 충분하다고 답함"
+    },
+    {
+      "id": "RAG-012",
+      "question": "포트폴리오에서 fixture 숫자는 어떻게 말해야 안전한가?",
+      "expected_answer": "실제 학습 성능이 아니라 운영 리스크 평가 화면과 API 구조를 검증하기 위한 fixture라고 명시해야 한다.",
+      "required_evidence": ["Source boundary", "Evaluation fixture note"],
+      "fail_if": "fixture accuracy를 실제 검증 성능으로 제시"
+    }
+  ]
+}

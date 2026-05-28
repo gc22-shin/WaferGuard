@@ -36,6 +36,7 @@ def init_db() -> None:
                 image_url TEXT NOT NULL,
                 heatmap_url TEXT NOT NULL,
                 overlay_url TEXT NOT NULL,
+                roi_url TEXT,
                 report TEXT NOT NULL,
                 cases_json TEXT NOT NULL,
                 model_version TEXT NOT NULL,
@@ -104,6 +105,17 @@ def init_db() -> None:
         _ensure_column(conn, "handoff_reports", "schedule_key", "TEXT")
         _ensure_column(conn, "handoff_reports", "sent_at", "TEXT")
         _ensure_column(conn, "handoff_reports", "updated_at", "TEXT")
+        _ensure_column(conn, "inspections", "lot_id", "TEXT")
+        _ensure_column(conn, "inspections", "process_step", "TEXT")
+        _ensure_column(conn, "inspections", "recipe_id", "TEXT")
+        _ensure_column(conn, "inspections", "image_source", "TEXT")
+        _ensure_column(conn, "inspections", "proxy_dataset", "TEXT")
+        _ensure_column(conn, "inspections", "proxy_status", "TEXT")
+        _ensure_column(conn, "inspections", "roi_url", "TEXT")
+        _ensure_column(conn, "inspections", "roi_bbox_json", "TEXT")
+        _ensure_column(conn, "inspections", "process_context_json", "TEXT")
+        _ensure_column(conn, "inspections", "metrology_json", "TEXT")
+        _ensure_column(conn, "inspections", "action_card_json", "TEXT")
         conn.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_handoff_reports_schedule_key
@@ -127,17 +139,24 @@ def insert_inspection(record: dict[str, object]) -> None:
         conn.execute(
             """
             INSERT INTO inspections (
-                id, wafer_id, line_id, equipment_id, defect_type, confidence,
-                risk_score, risk_level, hotspot_ratio, image_url, heatmap_url,
-                overlay_url, report, cases_json, model_version, status, created_at
+                id, lot_id, wafer_id, line_id, equipment_id, process_step, recipe_id, image_source, proxy_dataset, proxy_status,
+                defect_type, confidence, risk_score, risk_level, hotspot_ratio, image_url, heatmap_url,
+                overlay_url, roi_url, roi_bbox_json, report, cases_json, process_context_json, metrology_json,
+                action_card_json, model_version, status, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record["id"],
+                record.get("lot_id"),
                 record["wafer_id"],
                 record["line_id"],
                 record["equipment_id"],
+                record.get("process_step"),
+                record.get("recipe_id"),
+                record.get("image_source"),
+                record.get("proxy_dataset"),
+                record.get("proxy_status"),
                 record["defect_type"],
                 record["confidence"],
                 record["risk_score"],
@@ -146,8 +165,13 @@ def insert_inspection(record: dict[str, object]) -> None:
                 record["image_url"],
                 record["heatmap_url"],
                 record["overlay_url"],
+                record.get("roi_url"),
+                json.dumps(record.get("roi_bbox", []), ensure_ascii=False),
                 record["report"],
                 json.dumps(record["cases"], ensure_ascii=False),
+                json.dumps(record.get("process_context", {}), ensure_ascii=False),
+                json.dumps(record.get("metrology", {}), ensure_ascii=False),
+                json.dumps(record.get("action_card", {}), ensure_ascii=False),
                 record["model_version"],
                 record["status"],
                 record["created_at"],
@@ -425,7 +449,43 @@ def metrics() -> dict[str, object]:
 def _inspection_to_dict(row: sqlite3.Row) -> dict[str, object]:
     data = dict(row)
     data["cases"] = json.loads(data.pop("cases_json"))
+    data["roi_bbox"] = _json_or_default(data.pop("roi_bbox_json", None), [])
+    data["process_context"] = _json_or_default(data.pop("process_context_json", None), _legacy_process_context(data))
+    data["metrology"] = _json_or_default(data.pop("metrology_json", None), {})
+    action_card = _json_or_default(data.pop("action_card_json", None), {})
+    data["action_card"] = (
+        action_card
+        if isinstance(action_card, dict) and action_card.get("defect_type")
+        else _legacy_action_card(data)
+    )
     return data
+
+
+def _json_or_default(raw: str | None, default: object) -> object:
+    if not raw:
+        return default
+    return json.loads(raw)
+
+
+def _legacy_process_context(data: dict[str, object]) -> dict[str, object]:
+    return {
+        "lot_id": data.get("lot_id") or "LOT-LEGACY",
+        "wafer_id": data.get("wafer_id"),
+        "line_id": data.get("line_id"),
+        "process_step": data.get("process_step") or "Inspection",
+        "tool_id": data.get("equipment_id"),
+        "recipe_id": data.get("recipe_id") or "RCP-LEGACY",
+    }
+
+
+def _legacy_action_card(data: dict[str, object]) -> dict[str, object]:
+    return {
+        "title": f"{data.get('defect_type', 'Unknown')} Defect Action Card",
+        "defect_type": data.get("defect_type"),
+        "risk_level": data.get("risk_level"),
+        "human_review_rule": "기존 검사 이력입니다. 새 검사를 실행하면 process/metrology 기반 Action Card가 저장됩니다.",
+        "source_boundary": "legacy row fallback",
+    }
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:

@@ -42,20 +42,25 @@ def generate_images(
     wafer, defect_mask = _create_wafer(defect_type, rng)
     heatmap = _create_heatmap(defect_mask)
     overlay = _create_overlay(wafer, heatmap)
+    roi, roi_bbox = _create_roi(wafer, defect_mask)
 
     image_path = output_dir / f"{inspection_id}_wafer.png"
     heatmap_path = output_dir / f"{inspection_id}_heatmap.png"
     overlay_path = output_dir / f"{inspection_id}_overlay.png"
+    roi_path = output_dir / f"{inspection_id}_roi.png"
 
     wafer.save(image_path)
     heatmap.save(heatmap_path)
     overlay.save(overlay_path)
+    roi.save(roi_path)
 
     hotspot_ratio = float(defect_mask.mean())
     return {
         "image_path": image_path,
         "heatmap_path": heatmap_path,
         "overlay_path": overlay_path,
+        "roi_path": roi_path,
+        "roi_bbox": roi_bbox,
         "hotspot_ratio": round(hotspot_ratio, 4),
     }
 
@@ -171,3 +176,20 @@ def _create_heatmap(mask: np.ndarray) -> Image.Image:
 def _create_overlay(wafer: Image.Image, heatmap: Image.Image) -> Image.Image:
     base = wafer.convert("RGBA")
     return Image.alpha_composite(base, heatmap).convert("RGB")
+
+
+def _create_roi(wafer: Image.Image, mask: np.ndarray) -> tuple[Image.Image, list[int]]:
+    if not mask.any():
+        width, height = wafer.size
+        pad = width // 5
+        bbox = [pad, pad, width - pad, height - pad]
+    else:
+        ys, xs = np.where(mask)
+        pad = 18
+        x0 = max(0, int(xs.min()) - pad)
+        y0 = max(0, int(ys.min()) - pad)
+        x1 = min(mask.shape[1], int(xs.max()) + pad)
+        y1 = min(mask.shape[0], int(ys.max()) + pad)
+        bbox = [x0, y0, x1, y1]
+    roi = wafer.crop(tuple(bbox)).resize((224, 224), Image.Resampling.BICUBIC)
+    return roi, bbox

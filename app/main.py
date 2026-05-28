@@ -5,12 +5,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.services.config import OUTPUT_DIR, ensure_runtime_dirs
+from app.services.automation import automation_status, run_automation_tick
 from app.services.copilot import ops_copilot_summary
+from app.services.data_registry import metrology_threshold_basis, proxy_dataset_manifest
 from app.services.demo import seed_demo_data
+from app.services.evaluation import wm811k_evaluation_report
 from app.services.handoff import edit_handoff_report, generate_handoff_report, get_latest_handoff_report, send_handoff_report
 from app.services.mlops import pipeline_state, promote_latest, rollback, simulate_drift, simulate_retraining
 from app.services.pipeline import run_inspection
+from app.services.rag_eval import rag_evaluation_set
 from app.services.schemas import (
+    AutomationTickRequest,
     DemoSeedRequest,
     DriftRequest,
     HandoffEditRequest,
@@ -34,9 +39,9 @@ ensure_runtime_dirs()
 init_db()
 
 app = FastAPI(
-    title="WaferGuard MLOps API",
+    title="WaferGuard Agent Simulation API",
     version="0.1.0",
-    description="Local MVP for wafer defect classification, XAI, RAG reporting, and MLOps simulations.",
+    description="Local MVP for simulated wafer/process anomaly response with Agent decisions, RAG evidence, action cards, and handoff reports.",
 )
 
 app.add_middleware(
@@ -97,6 +102,36 @@ def demo_seed(request: DemoSeedRequest) -> dict[str, object]:
 @app.get("/api/v1/metrics")
 def service_metrics() -> dict[str, object]:
     return metrics()
+
+
+@app.get("/api/v1/evaluation/wm811k")
+def wm811k_evaluation() -> dict[str, object]:
+    return wm811k_evaluation_report()
+
+
+@app.get("/api/v1/rag/evaluation")
+def rag_evaluation() -> dict[str, object]:
+    return rag_evaluation_set()
+
+
+@app.get("/api/v1/automation/status")
+def monitor_status(line_id: str = "LINE-7") -> dict[str, object]:
+    return automation_status(line_id=line_id)
+
+
+@app.post("/api/v1/automation/tick")
+def monitor_tick(request: AutomationTickRequest) -> dict[str, object]:
+    return run_automation_tick(request)
+
+
+@app.get("/api/v1/proxy-datasets")
+def proxy_datasets() -> dict[str, object]:
+    return proxy_dataset_manifest()
+
+
+@app.get("/api/v1/metrology/thresholds")
+def metrology_thresholds() -> dict[str, object]:
+    return metrology_threshold_basis()
 
 
 @app.get("/api/v1/handoff/latest")

@@ -18,20 +18,61 @@ def main() -> None:
     inspection = client.post(
         "/api/v1/inspect",
         json={
+            "lot_id": "LOT-SMOKE-042",
             "wafer_id": "WF-SMOKE-001",
             "line_id": "LINE-7",
             "equipment_id": "ETCH-02",
+            "process_step": "Etch",
+            "recipe_id": "RCP-SMOKE-ETCH",
+            "image_source": "public_proxy",
+            "proxy_dataset": "mvtec-ad",
             "defect_hint": "Scratch",
+            "cd_nm": 31.8,
+            "overlay_nm": 7.2,
+            "film_thickness_nm": 91.2,
+            "roughness_nm": 3.8,
+            "defect_count": 240,
         },
     )
     assert inspection.status_code == 200, inspection.text
     payload = inspection.json()
     assert payload["defect_type"] == "Scratch"
     assert payload["overlay_url"].endswith("_overlay.png")
+    assert payload["roi_url"].endswith("_roi.png")
+    assert payload["image_source"] == "public_proxy"
+    assert "synthetic wafer fallback" in payload["proxy_status"]
+    assert payload["action_card"]["defect_type"] == "Scratch"
+    assert payload["process_context"]["process_step"] == "Etch"
+    assert payload["metrology"]["cd_nm"] == 31.8
+    assert payload["metrology"]["roughness_nm"] == 3.8
+    assert payload["metrology"]["defect_count"] == 240
+    assert payload["status"] == "review_required"
+    assert payload["action_card"]["metrology_rule_hits"]
+    assert payload["action_card"]["metrology_risk_delta"] > 0
 
     metrics = client.get("/api/v1/metrics")
     assert metrics.status_code == 200, metrics.text
     assert metrics.json()["total_inspections"] >= 1
+
+    evaluation = client.get("/api/v1/evaluation/wm811k")
+    assert evaluation.status_code == 200, evaluation.text
+    eval_payload = evaluation.json()
+    assert eval_payload["dataset"]["name"] == "WM-811K"
+    assert len(eval_payload["confusion_matrix"]["labels"]) == 9
+    assert eval_payload["summary"]["critical_missed_as_normal"] > 0
+    assert "fixture" in eval_payload["dataset"]["mode"]
+
+    rag_eval = client.get("/api/v1/rag/evaluation")
+    assert rag_eval.status_code == 200, rag_eval.text
+    assert rag_eval.json()["summary"]["question_count"] >= 10
+
+    proxy_datasets = client.get("/api/v1/proxy-datasets")
+    assert proxy_datasets.status_code == 200, proxy_datasets.text
+    assert "반도체 fab 이미지로 표현하면 안 됩니다" in proxy_datasets.json()["source_boundary"]
+
+    thresholds = client.get("/api/v1/metrology/thresholds")
+    assert thresholds.status_code == 200, thresholds.text
+    assert thresholds.json()["fields"]
 
     drift = client.post("/api/v1/mlops/drift", json={"intensity": "strong", "line_id": "LINE-7"})
     assert drift.status_code == 200, drift.text
@@ -116,6 +157,10 @@ def main() -> None:
             "health": health.json()["status"],
             "inspection_id": payload["id"],
             "risk": payload["risk_level"],
+            "metrology_rule_hits": len(payload["action_card"]["metrology_rule_hits"]),
+            "roi": payload["roi_url"],
+            "wm811k_macro_f1": eval_payload["summary"]["macro_f1"],
+            "rag_eval_questions": rag_eval.json()["summary"]["question_count"],
             "drift_status": drift.json()["status"],
             "demo_created": demo.json()["created_count"],
             "handoff_id": handoff.json()["id"],
