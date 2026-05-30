@@ -60,16 +60,12 @@ def ops_copilot_summary(line_id: str = "ALL") -> dict[str, object]:
     data = metrics()
     equipment_memory = _equipment_memory(rows)
     action_recommendations = _action_recommendations(rows)
-    near_miss_log = _near_miss_log(rows, handoff)
-    human_decision_trace = _human_decision_trace(rows)
 
     return {
-        "headline": _headline(equipment_memory, action_recommendations, near_miss_log),
+        "headline": _headline(equipment_memory, action_recommendations),
         "line_id": line_id,
         "equipment_memory": equipment_memory,
         "action_recommendations": action_recommendations,
-        "near_miss_log": near_miss_log,
-        "human_decision_trace": human_decision_trace,
         "handoff_linked": bool(handoff),
         "latest_handoff_id": handoff["id"] if handoff else None,
         "latest_drift_event": data["latest_drift_event"],
@@ -150,55 +146,10 @@ def _action_recommendations(rows: list[dict[str, object]]) -> list[dict[str, obj
     ]
 
 
-def _near_miss_log(rows: list[dict[str, object]], handoff: dict[str, object] | None) -> list[dict[str, object]]:
-    risky = [row for row in rows if row["risk_level"] == "High" or row["status"] == "review_required"][:8]
-    logs = []
-    for row in risky:
-        status = "handoff_captured" if handoff else "needs_handoff"
-        if row["engineer_decision"]:
-            status = f"engineer_{row['engineer_decision']}"
-        logs.append(
-            {
-                "inspection_id": row["id"],
-                "wafer_id": row["wafer_id"],
-                "equipment_id": row["equipment_id"],
-                "defect_type": row["defect_type"],
-                "risk_level": row["risk_level"],
-                "prevention_status": status,
-                "scrap_prevention_note": "후속 공정 투입 전 lot hold/review 판단 지점으로 기록됨",
-            }
-        )
-    return logs
-
-
-def _human_decision_trace(rows: list[dict[str, object]]) -> list[dict[str, object]]:
-    trace = []
-    for row in rows[:10]:
-        playbook = ACTION_PLAYBOOK.get(str(row["defect_type"]), ACTION_PLAYBOOK["Random"])
-        trace.append(
-            {
-                "inspection_id": row["id"],
-                "ai_prediction": f"{row['defect_type']} / {round(float(row['confidence']) * 100)}%",
-                "evidence": f"Risk {row['risk_level']}, hotspot {round(float(row['hotspot_ratio']) * 100, 1)}%",
-                "engineer_decision": row["engineer_decision"] or "pending",
-                "reviewer": row["reviewer"] or "-",
-                "review_note": row["review_note"] or playbook["check"],
-            }
-        )
-    return trace
-
-
 def _headline(
     equipment_memory: list[dict[str, object]],
     action_recommendations: list[dict[str, object]],
-    near_miss_log: list[dict[str, object]],
 ) -> str:
-    if near_miss_log:
-        first = near_miss_log[0]
-        return (
-            f"{first['equipment_id']} {first['defect_type']} 항목이 scrap near-miss로 기록되었습니다. "
-            "다음 행동은 검사 결과가 아니라 설비/공정 확인으로 이어져야 합니다."
-        )
     if equipment_memory:
         first = equipment_memory[0]
         return f"{first['equipment_id']}의 {first['main_pattern']} 패턴을 설비 메모리에 유지하고 다음 lot에서 반복 여부를 확인하세요."

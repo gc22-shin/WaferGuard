@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import struct
 from datetime import datetime, timezone
 from pathlib import Path
+
+import numpy as np
 
 from app.services.config import DB_PATH, MODEL_VERSION, ensure_runtime_dirs
 
@@ -97,6 +100,32 @@ def init_db() -> None:
                 sent_at TEXT,
                 updated_at TEXT,
                 created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS agent_traces (
+                id TEXT PRIMARY KEY,
+                inspection_id TEXT NOT NULL,
+                trace_json TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS pending_approvals (
+                id TEXT PRIMARY KEY,
+                inspection_id TEXT NOT NULL,
+                tool_name TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TEXT NOT NULL,
+                resolved_at TEXT
+            );
+
+            CREATE TABLE IF NOT EXISTS rag_documents (
+                id TEXT PRIMARY KEY,
+                content TEXT NOT NULL,
+                defect_type TEXT,
+                embedding BLOB,
+                metadata_json TEXT
             );
             """
         )
@@ -486,6 +515,155 @@ def _legacy_action_card(data: dict[str, object]) -> dict[str, object]:
         "human_review_rule": "기존 검사 이력입니다. 새 검사를 실행하면 process/metrology 기반 Action Card가 저장됩니다.",
         "source_boundary": "legacy row fallback",
     }
+
+
+def insert_agent_trace(inspection_id: str, trace: dict) -> str:
+    trace_id = f"TRC-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO agent_traces (id, inspection_id, trace_json, created_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (trace_id, inspection_id, json.dumps(trace, ensure_ascii=False), utc_now()),
+        )
+    return trace_id
+
+
+def insert_pending_approval(
+    inspection_id: str,
+    tool_name: str,
+    payload: dict,
+    reason: str,
+) -> str:
+    approval_id = f"APR-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO pending_approvals (id, inspection_id, tool_name, payload_json, reason, status, created_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', ?)
+            """,
+            (
+                approval_id,
+                inspection_id,
+                tool_name,
+                json.dumps(payload, ensure_ascii=False),
+                reason,
+                utc_now(),
+            ),
+        )
+    return approval_id
+
+
+def list_pending_approvals(status: str = "pending") -> list[dict]:
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM pending_approvals WHERE status = ? ORDER BY created_at DESC",
+            (status,),
+        ).fetchall()
+    result = []
+    for row in rows:
+        d = dict(row)
+        d["payload"] = json.loads(d.pop("payload_json", "{}"))
+        result.append(d)
+    return result
+
+
+def resolve_approval(approval_id: str, status: str) -> dict | None:
+    """Set status to 'approved' or 'rejected'."""
+    now = utc_now()
+    with connect() as conn:
+        conn.execute(
+            "UPDATE pending_approvals SET status = ?, resolved_at = ? WHERE id = ?",
+            (status, now, approval_id),
+        )
+        row = conn.execute(
+            "SELECT * FROM pending_approvals WHERE id = ?", (approval_id,)
+        ).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    d["payload"] = json.loads(d.pop("payload_json", "{}"))
+    return d
+
+
+def upsert_rag_document(
+    doc_id: str,
+    content: str,
+    defect_type: str | None,
+    embedding: list[float] | None,
+    metadata: dict | None = None,
+) -> None:
+    embedding_blob: bytes | None = None
+    if embedding is not None:
+        embedding_blob = struct.pack(f"{len(embedding)}f", *embedding)
+    with connect() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO rag_documents (id, content, defect_type, embedding, metadata_json)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                doc_id,
+                content,
+                defect_type,
+                embedding_blob,
+                json.dumps(metadata or {}, ensure_ascii=False),
+            ),
+        )
+
+
+def query_rag(query_vec: list[float], k: int = 3) -> list[dict]:
+    """Cosine similarity search over rag_documents.
+
+    Returns top-k documents sorted by descending similarity.
+    Falls back to returning first k rows if no embeddings are indexed.
+    """
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT id, content, defect_type, embedding, metadata_json FROM rag_documents"
+        ).fetchall()
+
+    if not rows:
+        return []
+
+    q = np.array(query_vec, dtype=np.float32)
+    q_norm = np.linalg.norm(q)
+    if q_norm == 0:
+        q_norm = 1.0
+
+    scored: list[tuple[float, dict]] = []
+    no_embedding_rows: list[dict] = []
+
+    for row in rows:
+        blob = row["embedding"]
+        doc = {
+            "id": row["id"],
+            "content": row["content"],
+            "defect_type": row["defect_type"],
+            "metadata": json.loads(row["metadata_json"] or "{}"),
+        }
+        if blob is None:
+            no_embedding_rows.append(doc)
+            continue
+        n = len(blob) // 4
+        vec = np.array(struct.unpack(f"{n}f", blob), dtype=np.float32)
+        vec_norm = np.linalg.norm(vec)
+        if vec_norm == 0:
+            sim = 0.0
+        else:
+            sim = float(np.dot(q, vec) / (q_norm * vec_norm))
+        doc["similarity"] = sim
+        scored.append((sim, doc))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    result = [doc for _, doc in scored[:k]]
+
+    # If not enough results, pad with no-embedding rows
+    if len(result) < k:
+        result.extend(no_embedding_rows[: k - len(result)])
+
+    return result
 
 
 def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:

@@ -5,3 +5,4 @@ pillow>=10.0
 numpy>=1.26
 requests>=2.31
 httpx>=0.28
+langgraph>=0.2

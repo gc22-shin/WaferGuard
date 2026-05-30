@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import random
 from datetime import datetime, timezone
 
@@ -19,6 +20,8 @@ from app.services.risk import compute_risk_score, risk_level
 from app.services.schemas import InspectRequest
 from app.services.storage import insert_alert, insert_inspection, production_model, utc_now
 from app.services.synthetic_wafer import choose_defect, generate_images
+
+logger = logging.getLogger(__name__)
 
 
 def run_inspection(request: InspectRequest) -> dict[str, object]:
@@ -73,6 +76,37 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
         metrology_rule_hits=metrology_rule_hits,
     )
 
+    # Agent escalation: Low → rule-based only; Medium/High/review_required → Agent
+    agent_result: dict | None = None
+    needs_agent = level in ("Medium", "High") or status == "review_required"
+    if needs_agent:
+        evidence = {
+            "inspection_id": inspection_id,
+            "defect_type": defect_type,
+            "risk_level": level,
+            "risk_score": risk_score,
+            "confidence": confidence,
+            "metrology_rule_hits": metrology_rule_hits,
+            "rag_cases": cases,
+            "process_context": process_context,
+            "metrology": metrology,
+            "image_urls": [
+                f"/outputs/images/{image_result['overlay_path'].name}",
+                f"/outputs/images/{image_result['roi_path'].name}",
+            ],
+        }
+        try:
+            from app.services.agent import run as agent_run  # noqa: PLC0415
+            agent_result = agent_run(evidence)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Agent run failed for %s: %s", inspection_id, exc)
+            agent_result = {
+                "final_action": f"Agent 실행 오류: {exc}",
+                "tool_calls": [],
+                "trace_id": None,
+                "agent_mode": "error",
+            }
+
     record = {
         "id": inspection_id,
         "lot_id": request.lot_id,
@@ -106,6 +140,11 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
         "model_version": model_version,
         "status": status,
         "created_at": utc_now(),
+        # Agent fields (None for Low / rule-only cases)
+        "agent_final_action": agent_result.get("final_action") if agent_result else None,
+        "agent_tool_calls": agent_result.get("tool_calls") if agent_result else None,
+        "agent_trace_id": agent_result.get("trace_id") if agent_result else None,
+        "agent_mode": agent_result.get("agent_mode") if agent_result else "rule_only",
     }
     insert_inspection(record)
     if level == "High":

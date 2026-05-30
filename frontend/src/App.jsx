@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -10,18 +10,17 @@ import {
   FileText,
   Gauge,
   GitBranch,
-  History,
-  MessageCircle,
   Play,
   RefreshCcw,
   RotateCcw,
-  Save,
-  Send,
   ShieldCheck,
   ShieldAlert,
   Target,
+  ThumbsDown,
+  ThumbsUp,
   Wrench,
   Workflow,
+  Zap,
 } from "lucide-react";
 import {
   Area,
@@ -552,13 +551,205 @@ function EvaluationPanel({ evaluation }) {
   );
 }
 
+// ── Agent Decision Panel ─────────────────────────────────────────────────────
+function AgentDecisionPanel({ inspection, onReAgent, reAgentBusy }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (!inspection) {
+    return (
+      <section className="panel agent-decision-panel">
+        <div className="panel-title">
+          <div>
+            <p>Agent Decision</p>
+            <h2>LangGraph 노드 흐름</h2>
+          </div>
+          <Zap size={21} />
+        </div>
+        <div className="empty-state compact">검사 결과를 선택하면 Agent 판단 흐름이 표시됩니다.</div>
+      </section>
+    );
+  }
+
+  const trace = inspection.agent_trace || [];
+  const finalAction = inspection.final_action || null;
+  const isLowRisk = inspection.risk_level === "Low" && trace.length === 0;
+
+  return (
+    <section className="panel agent-decision-panel">
+      <div className="panel-title">
+        <div>
+          <p>Agent Decision</p>
+          <h2>LangGraph 노드 흐름 · {inspection.id}</h2>
+        </div>
+        <Zap size={21} />
+      </div>
+      <p className="honesty-label">
+        본 시뮬레이션에서 결함 분류는 입력값이며, Agent는 분류 결과에 대한 운영 판단을 시뮬레이션합니다
+      </p>
+
+      {isLowRisk ? (
+        <div className="agent-auto-pass">
+          <CheckCircle2 size={16} />
+          <span>룰 기반 자동 통과 (Agent 미참여)</span>
+        </div>
+      ) : trace.length === 0 ? (
+        <div className="empty-state compact">백엔드 엔드포인트 준비 중 — agent_trace 없음</div>
+      ) : (
+        <div className="agent-trace-timeline">
+          {trace.map((step, i) => (
+            <div className={`trace-step trace-${step.node}`} key={i}>
+              <div className="trace-node-label">
+                <span className="trace-index">{i + 1}</span>
+                <strong>{step.node}</strong>
+                {step.tool_name && <span className="trace-tool">{step.tool_name}</span>}
+              </div>
+              {step.message && <p className="trace-message">{step.message}</p>}
+              {step.args && (
+                <details className="trace-args">
+                  <summary>인자 보기</summary>
+                  <pre>{JSON.stringify(step.args, null, 2)}</pre>
+                </details>
+              )}
+              {step.result && (
+                <details className="trace-result">
+                  <summary>결과 보기</summary>
+                  <pre>{typeof step.result === "string" ? step.result : JSON.stringify(step.result, null, 2)}</pre>
+                </details>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {finalAction && (
+        <div className="agent-final-action">
+          <strong>최종 판단</strong>
+          <p>{finalAction}</p>
+        </div>
+      )}
+
+      {/* RAG retrieved cases */}
+      {(inspection.similar_cases?.length > 0) && (
+        <div className="rag-cases-section">
+          <button className="detail-toggle" onClick={() => setExpanded((v) => !v)}>
+            {expanded ? "RAG 유사 사례 숨기기" : `RAG 유사 사례 ${inspection.similar_cases.length}건 보기`}
+          </button>
+          <p className="honesty-label-small">RAG corpus 50건 한정, 사내 문서 검색 아님</p>
+          {expanded && (
+            <div className="rag-cases-list">
+              {inspection.similar_cases.map((c, i) => (
+                <div className="rag-case-item" key={i}>
+                  <strong>{c.case_id || `Case ${i + 1}`} · {c.defect_type}</strong>
+                  <p>{c.summary || c.action_taken}</p>
+                  {c.similarity !== undefined && <small>유사도 {Math.round(c.similarity * 100)}%</small>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="button-row" style={{ marginTop: "0.75rem" }}>
+        <button onClick={() => onReAgent(inspection.id)} disabled={reAgentBusy}>
+          {reAgentBusy ? <RefreshCcw size={16} className="spin" /> : <Zap size={16} />}
+          {reAgentBusy ? " Agent 재질의 중..." : " Agent 재질의"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// ── Pending Approvals Panel ──────────────────────────────────────────────────
+function PendingApprovalsPanel() {
+  const [approvals, setApprovals] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [actingId, setActingId] = useState(null);
+  const [unavailable, setUnavailable] = useState(false);
+
+  const fetchApprovals = useCallback(async () => {
+    try {
+      const data = await api("/api/v1/pending-approvals");
+      setApprovals(Array.isArray(data) ? data : []);
+      setUnavailable(false);
+    } catch {
+      setUnavailable(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchApprovals();
+    const id = setInterval(fetchApprovals, 10000);
+    return () => clearInterval(id);
+  }, [fetchApprovals]);
+
+  async function act(id, action) {
+    setActingId(id);
+    try {
+      await api(`/api/v1/approvals/${id}/${action}`, { method: "POST", body: JSON.stringify({}) });
+      await fetchApprovals();
+    } catch {
+      // silently ignore — endpoint may not exist yet
+      setUnavailable(true);
+    } finally {
+      setActingId(null);
+    }
+  }
+
+  return (
+    <section className="panel approvals-panel">
+      <div className="panel-title">
+        <div>
+          <p>Pending Approvals</p>
+          <h2>Agent 대기 승인 큐</h2>
+        </div>
+        <ShieldAlert size={21} />
+      </div>
+      {unavailable ? (
+        <div className="empty-state compact">백엔드 엔드포인트 준비 중</div>
+      ) : approvals.length === 0 ? (
+        <div className="empty-state compact">현재 대기 중인 승인 항목 없음</div>
+      ) : (
+        <div className="approvals-list">
+          {approvals.map((item) => (
+            <div className="approval-card" key={item.id}>
+              <div className="approval-header">
+                <strong>{item.tool_name}</strong>
+                <span className="approval-insp">검사 #{item.inspection_id}</span>
+              </div>
+              <p className="approval-reason">{item.reason}</p>
+              {item.created_at && <small>{new Date(item.created_at).toLocaleString("ko-KR")}</small>}
+              <div className="button-row">
+                <button
+                  className="primary"
+                  onClick={() => act(item.id, "approve")}
+                  disabled={actingId === item.id}
+                >
+                  <ThumbsUp size={15} /> 승인
+                </button>
+                <button
+                  onClick={() => act(item.id, "reject")}
+                  disabled={actingId === item.id}
+                >
+                  <ThumbsDown size={15} /> 거부
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <button className="detail-toggle" onClick={fetchApprovals} disabled={loading}>
+        <RefreshCcw size={14} /> 새로고침
+      </button>
+    </section>
+  );
+}
+
 export default function App() {
   const [metrics, setMetrics] = useState(null);
   const [inspections, setInspections] = useState([]);
   const [state, setState] = useState(null);
   const [latest, setLatest] = useState(null);
   const [handoff, setHandoff] = useState(null);
-  const [handoffEdit, setHandoffEdit] = useState({ headline: "", operator_note: "", markdown: "", scrap_risk: "Low" });
   const [copilot, setCopilot] = useState(null);
   const [evaluation, setEvaluation] = useState(null);
   const [ragEvaluation, setRagEvaluation] = useState(null);
@@ -566,13 +757,6 @@ export default function App() {
   const [autoMonitorEnabled, setAutoMonitorEnabled] = useState(false);
   const [autoTickSeconds, setAutoTickSeconds] = useState(12);
   const [automationLog, setAutomationLog] = useState([]);
-  const [autoDraftEnabled, setAutoDraftEnabled] = useState(false);
-  const [shiftDraftTime, setShiftDraftTime] = useState("17:00");
-  const [lastAutoDraftKey, setLastAutoDraftKey] = useState("");
-  const [chatMessages, setChatMessages] = useState([
-    { role: "assistant", text: "교대 리포트 초안 생성, 설비 특이사항 확인, 전달 확인을 도와줄게요." },
-  ]);
-  const [chatInput, setChatInput] = useState("");
   const [form, setForm] = useState({
     lot_id: "LOT-DEMO-042",
     wafer_id: "WF-DEMO-001",
@@ -598,6 +782,7 @@ export default function App() {
     note: "",
   });
   const [busy, setBusy] = useState(false);
+  const [reAgentBusy, setReAgentBusy] = useState(false);
   const [error, setError] = useState("");
 
   async function refresh() {
@@ -629,61 +814,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!handoff) return;
-    setHandoffEdit({
-      headline: handoff.headline || "",
-      operator_note: handoff.operator_note || "",
-      markdown: handoff.markdown || "",
-      scrap_risk: handoff.scrap_risk || "Low",
-    });
-  }, [handoff?.id]);
-
-  useEffect(() => {
-    const id = setInterval(async () => {
-      if (!autoDraftEnabled || !shiftDraftTime) return;
-      const now = new Date();
-      const today = now.toISOString().slice(0, 10);
-      const hhmm = now.toTimeString().slice(0, 5);
-      const draftKey = `${today}-${shiftDraftTime}-${handoffForm.line_id}`;
-      if (hhmm >= shiftDraftTime && lastAutoDraftKey !== draftKey) {
-        setLastAutoDraftKey(draftKey);
-        try {
-          const report = await api("/api/v1/handoff/report", {
-            method: "POST",
-            body: JSON.stringify({
-              ...handoffForm,
-              scheduled_for: shiftDraftTime,
-              reuse_existing: true,
-              note: handoffForm.note || `${shiftDraftTime} 교대 자동 초안`,
-            }),
-          });
-          setHandoff(report);
-          appendChat(
-            "assistant",
-            report.reused_existing
-              ? `${shiftDraftTime} 교대 리포트 기존 초안을 다시 열었어요. 수정 후 '이대로 전달'을 눌러주세요.`
-              : `${shiftDraftTime} 교대 리포트 초안을 자동 생성했어요. 수정 후 '이대로 전달'을 눌러주세요.`,
-          );
-        } catch (err) {
-          setError(err.message);
-        }
-      }
-    }, 15000);
-    return () => clearInterval(id);
-  }, [autoDraftEnabled, shiftDraftTime, handoffForm, lastAutoDraftKey]);
-
-  useEffect(() => {
     if (!autoMonitorEnabled) return undefined;
     let cancelled = false;
     async function tick() {
       try {
-        const result = await triggerAutomationTick("auto");
-        if (!cancelled && result.handoff_report) {
-          appendChat(
-            "assistant",
-            `Auto Monitor가 ${result.inspection.equipment_id} ${result.inspection.defect_type} 이벤트를 감지해서 Daily Report 초안을 만들었어요.`,
-          );
-        }
+        await triggerAutomationTick("auto");
       } catch (err) {
         if (!cancelled) setError(err.message);
       }
@@ -752,7 +887,7 @@ export default function App() {
       if (action === "handoff") {
         const report = await api("/api/v1/handoff/report", {
           method: "POST",
-          body: JSON.stringify({ ...handoffForm, scheduled_for: shiftDraftTime }),
+          body: JSON.stringify({ ...handoffForm }),
         });
         setHandoff(report);
       }
@@ -769,30 +904,6 @@ export default function App() {
         if (seededRows?.length) {
           setLatest(seededRows[seededRows.length - 1]);
         }
-        appendChat(
-          "assistant",
-          `시연 데이터 ${result.created_count}건과 엔지니어 리뷰 ${result.reviewed_count}건을 생성했어요. 결함 분포와 Human Decision Trace를 확인해보세요.`,
-        );
-      }
-      if (action === "saveHandoff" && handoff) {
-        const savePayload = {
-          headline: handoffEdit.headline,
-          operator_note: handoffEdit.operator_note,
-          scrap_risk: handoffEdit.scrap_risk,
-          markdown: handoffEdit.markdown !== handoff.markdown ? handoffEdit.markdown : null,
-        };
-        const report = await api(`/api/v1/handoff/${handoff.id}`, {
-          method: "PUT",
-          body: JSON.stringify(savePayload),
-        });
-        setHandoff(report);
-      }
-      if (action === "sendHandoff" && handoff) {
-        const report = await api(`/api/v1/handoff/${handoff.id}/send`, {
-          method: "POST",
-          body: JSON.stringify({ sender: handoffForm.operator, message: "이대로 전달합니다." }),
-        });
-        setHandoff(report);
       }
       await refresh();
     } catch (err) {
@@ -831,52 +942,21 @@ export default function App() {
     return result;
   }
 
-  function appendChat(role, text) {
-    setChatMessages((messages) => [...messages, { role, text }]);
-  }
-
-  async function handleChatSubmit(event) {
-    event.preventDefault();
-    const text = chatInput.trim();
-    if (!text) return;
-    setChatInput("");
-    appendChat("user", text);
+  async function reAgent(id) {
+    setReAgentBusy(true);
+    setError("");
     try {
-      if (text.includes("리포트") || text.includes("초안")) {
-        const report = await api("/api/v1/handoff/report", {
-          method: "POST",
-          body: JSON.stringify({ ...handoffForm, scheduled_for: shiftDraftTime }),
-        });
-        setHandoff(report);
-        appendChat("assistant", "교대 리포트 초안을 만들었어요. 오른쪽에서 수정하고 '이대로 전달'을 눌러주세요.");
-        return;
-      }
-      if (text.includes("전달")) {
-        if (!handoff) {
-          appendChat("assistant", "전달할 리포트 초안이 아직 없어요. 먼저 초안을 생성해 주세요.");
-          return;
-        }
-        const report = await api(`/api/v1/handoff/${handoff.id}/send`, {
-          method: "POST",
-          body: JSON.stringify({ sender: handoffForm.operator, message: "채팅에서 전달 확인" }),
-        });
-        setHandoff(report);
-        appendChat("assistant", `${report.id} 리포트를 전달 완료 상태로 기록했어요.`);
-        return;
-      }
-      if (text.includes("설비") || text.includes("특이")) {
-        const memory = copilot?.equipment_memory?.[0];
-        appendChat(
-          "assistant",
-          memory
-            ? `${memory.equipment_id}에서 ${memory.main_pattern} 패턴이 중요해요. 먼저 ${memory.first_check}를 확인하세요.`
-            : "현재 반복 설비 패턴은 아직 없어요.",
-        );
-        return;
-      }
-      appendChat("assistant", copilot?.headline || "현재 검사와 인수인계 데이터를 기준으로 위험 항목을 확인 중입니다.");
+      const updated = await api(`/api/v1/inspect/${id}/re-agent`, { method: "POST", body: JSON.stringify({}) });
+      setLatest(updated);
+      await refresh();
     } catch (err) {
-      appendChat("assistant", `처리 중 오류가 났어요: ${err.message}`);
+      if (err.message?.includes("404") || err.message?.includes("엔드포인트")) {
+        setError("re-agent 엔드포인트 준비 중");
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      setReAgentBusy(false);
     }
   }
 
@@ -1049,13 +1129,20 @@ export default function App() {
         <section className="panel result-panel">
           <div className="panel-title">
             <div>
-              <p>Agent Decision</p>
+              <p>Inspection Result</p>
               <h2>{latest ? latest.id : "검사 대기"}</h2>
             </div>
             {latest && <RiskPill value={latest.risk_level} />}
           </div>
+          <p className="honesty-label">본 시뮬레이션에서 결함 분류는 입력값이며, Agent는 분류 결과에 대한 운영 판단을 시뮬레이션합니다</p>
           {latest ? (
             <>
+              {latest.risk_level === "Low" && (
+                <div className="agent-auto-pass">
+                  <CheckCircle2 size={16} />
+                  <span>룰 기반 자동 통과 (Agent 미참여)</span>
+                </div>
+              )}
               <div className="image-strip">
                 <figure>
                   <img src={`${API_BASE}${latest.image_url}`} alt="Wafer map" />
@@ -1090,6 +1177,10 @@ export default function App() {
                 <button onClick={() => review("needs_review")} disabled={busy}>
                   <AlertTriangle size={17} /> 추가 검토
                 </button>
+                <button onClick={() => reAgent(latest.id)} disabled={reAgentBusy}>
+                  {reAgentBusy ? <RefreshCcw size={16} className="spin" /> : <Zap size={16} />}
+                  {reAgentBusy ? " 재질의 중..." : " Agent 재질의"}
+                </button>
               </div>
             </>
           ) : (
@@ -1113,11 +1204,16 @@ export default function App() {
           <div className="queue-list">
             {reviewQueue.length === 0 && <div className="empty-state compact">현재 긴급 검토 항목 없음</div>}
             {reviewQueue.map((item) => (
-              <button key={item.id} className="queue-item" onClick={() => setLatest(item)}>
-                <span>{item.wafer_id}</span>
-                <strong>{item.defect_type}</strong>
-                <RiskPill value={item.risk_level} />
-              </button>
+              <div key={item.id} className="queue-item-wrap">
+                <button className="queue-item" onClick={() => setLatest(item)}>
+                  <span>{item.wafer_id}</span>
+                  <strong>{item.defect_type}</strong>
+                  <RiskPill value={item.risk_level} />
+                </button>
+                <button className="queue-reagent" onClick={() => reAgent(item.id)} disabled={reAgentBusy} title="Agent 재질의">
+                  <Zap size={14} />
+                </button>
+              </div>
             ))}
           </div>
         </section>
@@ -1125,36 +1221,11 @@ export default function App() {
 
       <SourceBoundary evaluation={evaluation} ragEvaluation={ragEvaluation} />
 
-      <EvaluationPanel evaluation={evaluation} />
+      <AgentDecisionPanel inspection={latest} onReAgent={reAgent} reAgentBusy={reAgentBusy} />
 
-      <section className="panel chat-panel">
-        <div className="panel-title">
-          <div>
-            <p>Shift Copilot Chat</p>
-            <h2>교대 리포트 작업 채팅</h2>
-          </div>
-          <MessageCircle size={21} />
-        </div>
-        <div className="chat-layout">
-          <div className="chat-stream">
-            {chatMessages.map((message, index) => (
-              <div className={`chat-bubble chat-${message.role}`} key={`${message.role}-${index}`}>
-                {message.text}
-              </div>
-            ))}
-          </div>
-          <form className="chat-form" onSubmit={handleChatSubmit}>
-            <input
-              value={chatInput}
-              onChange={(event) => setChatInput(event.target.value)}
-              placeholder="예: 교대 리포트 초안 만들어줘 / 이대로 전달해 / 설비 특이사항 알려줘"
-            />
-            <button className="primary" type="submit">
-              <Send size={16} /> 전송
-            </button>
-          </form>
-        </div>
-      </section>
+      <PendingApprovalsPanel />
+
+      <EvaluationPanel evaluation={evaluation} />
 
       <section className="panel handoff-panel">
         <div className="panel-title">
@@ -1212,24 +1283,6 @@ export default function App() {
                 placeholder="예: ETCH-02 edge ring 증가, 다음 근무자가 PM 이력 확인"
               />
             </label>
-            <div className="schedule-row">
-              <label>
-                자동 초안 시간
-                <input
-                  type="time"
-                  value={shiftDraftTime}
-                  onChange={(event) => setShiftDraftTime(event.target.value)}
-                />
-              </label>
-              <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={autoDraftEnabled}
-                  onChange={(event) => setAutoDraftEnabled(event.target.checked)}
-                />
-                <span><Clock size={15} /> 자동 초안</span>
-              </label>
-            </div>
             <button className="primary wide" onClick={() => runAction("handoff")} disabled={busy}>
               <ClipboardList size={17} /> Daily Report 초안 생성
             </button>
@@ -1240,35 +1293,18 @@ export default function App() {
               <>
                 <div className="handoff-summary">
                   <div className="handoff-status-row">
-                    <span className={`scrap-risk scrap-${handoffEdit.scrap_risk}`}>Scrap Risk {handoffEdit.scrap_risk}</span>
+                    <span className={`scrap-risk scrap-${handoff.scrap_risk || "Low"}`}>Scrap Risk {handoff.scrap_risk || "Low"}</span>
                     <span className={`report-status status-${handoff.status || "draft"}`}>{handoff.status === "sent" ? "전달 완료" : "초안"}</span>
                   </div>
-                  <label>
-                    핵심 인수인계
-                    <input
-                      value={handoffEdit.headline}
-                      onChange={(event) => setHandoffEdit({ ...handoffEdit, headline: event.target.value })}
-                    />
-                  </label>
-                  <label>
-                    Scrap Risk
-                    <select
-                      value={handoffEdit.scrap_risk}
-                      onChange={(event) => setHandoffEdit({ ...handoffEdit, scrap_risk: event.target.value })}
-                    >
-                      <option value="Low">Low</option>
-                      <option value="Medium">Medium</option>
-                      <option value="High">High</option>
-                    </select>
-                  </label>
+                  {handoff.headline && <strong className="handoff-headline">{handoff.headline}</strong>}
                 </div>
                 <div className="handoff-sections">
                   <section>
                     <h3>설비 특이사항</h3>
-                    {handoff.equipment_watch.length === 0 ? (
+                    {handoff.equipment_watch?.length === 0 ? (
                       <p>현재 특이 설비 없음</p>
                     ) : (
-                      handoff.equipment_watch.map((item) => (
+                      handoff.equipment_watch?.map((item) => (
                         <div className="handoff-item" key={`${item.equipment_id}-${item.main_defect}`}>
                           <strong>{item.equipment_id} / {item.main_defect}</strong>
                           <span>{item.required_action}</span>
@@ -1279,40 +1315,16 @@ export default function App() {
                   <section>
                     <h3>다음 근무자 체크리스트</h3>
                     <ul>
-                      {handoff.next_shift_checklist.map((item) => <li key={item}>{item}</li>)}
+                      {handoff.next_shift_checklist?.map((item) => <li key={item}>{item}</li>)}
                     </ul>
                   </section>
                 </div>
-                <label className="note-field">
-                  작성자 메모
-                  <textarea
-                    value={handoffEdit.operator_note}
-                    onChange={(event) => setHandoffEdit({ ...handoffEdit, operator_note: event.target.value })}
-                  />
-                </label>
-                <label className="note-field">
-                  리포트 본문
-                  <textarea
-                    className="handoff-editor"
-                    value={handoffEdit.markdown}
-                    onChange={(event) => setHandoffEdit({ ...handoffEdit, markdown: event.target.value })}
-                  />
-                </label>
-                <div className="confirm-box">
-                  {handoff.status === "sent" ? (
-                    <strong>{handoff.sent_by || handoffForm.operator}가 {handoff.sent_at || "방금"} 전달 완료로 기록했습니다.</strong>
-                  ) : (
-                    <strong>이대로 다음 근무자에게 전달하시겠습니까?</strong>
-                  )}
-                  <div className="button-row">
-                    <button onClick={() => runAction("saveHandoff")} disabled={busy || !handoff}>
-                      <Save size={16} /> 수정 저장
-                    </button>
-                    <button className="primary" onClick={() => runAction("sendHandoff")} disabled={busy || !handoff || handoff.status === "sent"}>
-                      <Send size={16} /> 이대로 전달
-                    </button>
+                {handoff.operator_note && (
+                  <div className="handoff-note-view">
+                    <strong>작성자 메모</strong>
+                    <p>{handoff.operator_note}</p>
                   </div>
-                </div>
+                )}
               </>
             ) : (
               <div className="empty-state compact">Daily Report를 생성하면 교대 인수인계 내용이 여기에 저장됩니다.</div>
@@ -1358,32 +1370,6 @@ export default function App() {
                     <div className="ops-item" key={`${item.priority}-${item.inspection_id || item.equipment_id}`}>
                       <strong>{item.priority} / {item.owner}</strong>
                       <span>{item.recommended_action}</span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-              <section>
-                <h3><ShieldAlert size={15} /> Near-miss Log</h3>
-                <div className="ops-list">
-                  {copilot.near_miss_log.length === 0 ? (
-                    <p>현재 near-miss 기록 없음</p>
-                  ) : (
-                    copilot.near_miss_log.slice(0, 3).map((item) => (
-                      <div className="ops-item" key={item.inspection_id}>
-                        <strong>{item.wafer_id} / {item.defect_type}</strong>
-                        <span>{item.scrap_prevention_note}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </section>
-              <section>
-                <h3><History size={15} /> Human Decision Trace</h3>
-                <div className="ops-list">
-                  {copilot.human_decision_trace.slice(0, 3).map((item) => (
-                    <div className="ops-item" key={item.inspection_id}>
-                      <strong>{item.ai_prediction} {"->"} {item.engineer_decision}</strong>
-                      <span>{item.review_note}</span>
                     </div>
                   ))}
                 </div>

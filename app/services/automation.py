@@ -1,13 +1,47 @@
 from __future__ import annotations
 
+import json
+import logging
 import random
 from datetime import datetime, timezone
+from pathlib import Path
 
 from app.services.handoff import generate_handoff_report, get_latest_handoff_report
 from app.services.mlops import simulate_drift
 from app.services.pipeline import run_inspection
 from app.services.schemas import AutomationTickRequest, DriftRequest, HandoffReportRequest, InspectRequest
 from app.services.storage import list_inspections_for_handoff, metrics, utc_now
+
+logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Demo scenario script — loaded once at module import
+# ---------------------------------------------------------------------------
+
+_DEMO_SCRIPT_PATH = Path(__file__).resolve().parent.parent / "data" / "demo_scenario_script.json"
+
+def _load_demo_script() -> list[dict]:
+    try:
+        with _DEMO_SCRIPT_PATH.open(encoding="utf-8") as f:
+            steps = json.load(f)
+        logger.info("Loaded %d demo scenario steps from %s", len(steps), _DEMO_SCRIPT_PATH)
+        return steps
+    except Exception as exc:
+        logger.warning("Could not load demo_scenario_script.json: %s — using SCENARIOS fallback", exc)
+        return []
+
+_DEMO_SCRIPT: list[dict] = _load_demo_script()
+_scenario_index: int = 0  # module-level sequential counter (wraps around)
+
+
+def _next_scenario() -> dict:
+    """Return the next scenario step from the demo script, or fall back to random SCENARIOS."""
+    global _scenario_index  # noqa: PLW0603
+    if _DEMO_SCRIPT:
+        step = _DEMO_SCRIPT[_scenario_index % len(_DEMO_SCRIPT)]
+        _scenario_index += 1
+        return step
+    return random.choice(SCENARIOS)
 
 
 SCENARIOS = [
@@ -105,7 +139,7 @@ def automation_status(line_id: str = "LINE-7") -> dict[str, object]:
 
 
 def run_automation_tick(request: AutomationTickRequest) -> dict[str, object]:
-    scenario = random.choice(SCENARIOS)
+    scenario = _next_scenario()
     stamp = datetime.now(timezone.utc).strftime("%m%d%H%M%S%f")
     wafer_id = f"WF-AUTO-{stamp[-10:]}"
     lot_id = f"LOT-AUTO-{stamp[:6]}"

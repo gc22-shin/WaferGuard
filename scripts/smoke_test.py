@@ -98,24 +98,6 @@ def main() -> None:
     assert handoff.status_code == 200, handoff.text
     assert "다음 근무자 체크리스트" in handoff.json()["markdown"]
 
-    edited = client.put(
-        f"/api/v1/handoff/{handoff.json()['id']}",
-        json={
-            "headline": "교대 전 ETCH-02 이슈 확인 필요",
-            "operator_note": "자동 초안 수정 테스트",
-        },
-    )
-    assert edited.status_code == 200, edited.text
-    assert edited.json()["status"] == "draft"
-    assert "자동 초안 수정 테스트" in edited.json()["markdown"]
-
-    sent = client.post(
-        f"/api/v1/handoff/{handoff.json()['id']}/send",
-        json={"sender": "smoke-test", "message": "이대로 전달합니다."},
-    )
-    assert sent.status_code == 200, sent.text
-    assert sent.json()["status"] == "sent"
-
     scheduled_a = client.post(
         "/api/v1/handoff/report",
         json={
@@ -152,11 +134,16 @@ def main() -> None:
     assert copilot.status_code == 200, copilot.text
     assert copilot.json()["action_recommendations"]
 
+    # Verify new endpoints
+    approvals = client.get("/api/v1/pending-approvals")
+    assert approvals.status_code == 200, approvals.text
+
     print(
         {
             "health": health.json()["status"],
             "inspection_id": payload["id"],
             "risk": payload["risk_level"],
+            "agent_mode": payload.get("agent_mode", "n/a"),
             "metrology_rule_hits": len(payload["action_card"]["metrology_rule_hits"]),
             "roi": payload["roi_url"],
             "wm811k_macro_f1": eval_payload["summary"]["macro_f1"],
@@ -164,7 +151,7 @@ def main() -> None:
             "drift_status": drift.json()["status"],
             "demo_created": demo.json()["created_count"],
             "handoff_id": handoff.json()["id"],
-            "handoff_status": sent.json()["status"],
+            "pending_approvals": len(approvals.json()),
             "copilot_actions": len(copilot.json()["action_recommendations"]),
             "models": len(state.json()["models"]),
         }
