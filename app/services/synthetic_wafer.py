@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
+from app.services import real_wafer
 from app.services.schemas import DefectType
 
 DEFECT_TYPES: list[str] = [
@@ -39,7 +40,20 @@ def generate_images(
     seed: int | None = None,
 ) -> dict[str, object]:
     rng = np.random.default_rng(seed or random.randint(1, 999_999))
-    wafer, defect_mask = _create_wafer(defect_type, rng)
+
+    sample = real_wafer.sample_wafer(defect_type)
+    source_meta: dict[str, object] | None = None
+    if sample is not None:
+        wafer, defect_mask = _render_real_wafer(sample["wafer_map"])
+        source_meta = {
+            "source": "wm811k",
+            "wm811k_id": sample["id"],
+            "lot_name": sample["lot_name"],
+            "wafer_index": sample["wafer_index"],
+        }
+    else:
+        wafer, defect_mask = _create_wafer(defect_type, rng)
+
     heatmap = _create_heatmap(defect_mask)
     overlay = _create_overlay(wafer, heatmap)
     roi, roi_bbox = _create_roi(wafer, defect_mask)
@@ -55,7 +69,7 @@ def generate_images(
     roi.save(roi_path)
 
     hotspot_ratio = float(defect_mask.mean())
-    return {
+    result: dict[str, object] = {
         "image_path": image_path,
         "heatmap_path": heatmap_path,
         "overlay_path": overlay_path,
@@ -63,6 +77,45 @@ def generate_images(
         "roi_bbox": roi_bbox,
         "hotspot_ratio": round(hotspot_ratio, 4),
     }
+    if source_meta is not None:
+        result["wafer_source"] = source_meta
+    return result
+
+
+def _render_real_wafer(wafer_map: np.ndarray) -> tuple[Image.Image, np.ndarray]:
+    """Render a WM-811K integer wafer map (values 0/1/2) as a display image.
+
+    Background pixels (0) are dark; normal die (1) is light gray; defect die
+    (2) is highlighted red. The returned mask marks defect dies (value 2).
+    """
+    target = 224
+    src_h, src_w = wafer_map.shape
+    scale = target / max(src_h, src_w)
+    new_h, new_w = int(round(src_h * scale)), int(round(src_w * scale))
+    # Nearest-neighbour upscale to preserve the discrete die grid.
+    arr = Image.fromarray(wafer_map, mode="L").resize((new_w, new_h), Image.Resampling.NEAREST)
+    upscaled = np.asarray(arr)
+
+    rgb = np.zeros((new_h, new_w, 3), dtype=np.uint8)
+    background = upscaled == 0
+    normal = upscaled == 1
+    defect = upscaled == 2
+    rgb[background] = np.array([12, 18, 24], dtype=np.uint8)
+    rgb[normal] = np.array([178, 178, 178], dtype=np.uint8)
+    rgb[defect] = np.array([196, 64, 52], dtype=np.uint8)
+
+    # Centre-pad to a square canvas so downstream code sees a fixed size.
+    canvas = np.zeros((target, target, 3), dtype=np.uint8)
+    canvas[:] = np.array([12, 18, 24], dtype=np.uint8)
+    off_y = (target - new_h) // 2
+    off_x = (target - new_w) // 2
+    canvas[off_y:off_y + new_h, off_x:off_x + new_w] = rgb
+
+    mask = np.zeros((target, target), dtype=bool)
+    mask[off_y:off_y + new_h, off_x:off_x + new_w] = defect
+
+    image = Image.fromarray(canvas, mode="RGB")
+    return image, mask
 
 
 def _create_wafer(defect_type: str, rng: np.random.Generator) -> tuple[Image.Image, np.ndarray]:

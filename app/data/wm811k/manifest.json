@@ -1,0 +1,2975 @@
+{
+  "samples_per_class": 30,
+  "wafers": [
+    {
+      "id": "WM811K-Center-000",
+      "defect_type": "Center",
+      "lot_name": "lot36942",
+      "wafer_index": 12,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/000.npy"
+    },
+    {
+      "id": "WM811K-Center-001",
+      "defect_type": "Center",
+      "lot_name": "lot36765",
+      "wafer_index": 11,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/001.npy"
+    },
+    {
+      "id": "WM811K-Center-002",
+      "defect_type": "Center",
+      "lot_name": "lot36638",
+      "wafer_index": 22,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/002.npy"
+    },
+    {
+      "id": "WM811K-Center-003",
+      "defect_type": "Center",
+      "lot_name": "lot43509",
+      "wafer_index": 24,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/003.npy"
+    },
+    {
+      "id": "WM811K-Center-004",
+      "defect_type": "Center",
+      "lot_name": "lot11513",
+      "wafer_index": 13,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "Center/004.npy"
+    },
+    {
+      "id": "WM811K-Center-005",
+      "defect_type": "Center",
+      "lot_name": "lot11875",
+      "wafer_index": 13,
+      "shape": [
+        35,
+        36
+      ],
+      "rel_path": "Center/005.npy"
+    },
+    {
+      "id": "WM811K-Center-006",
+      "defect_type": "Center",
+      "lot_name": "lot19237",
+      "wafer_index": 14,
+      "shape": [
+        40,
+        40
+      ],
+      "rel_path": "Center/006.npy"
+    },
+    {
+      "id": "WM811K-Center-007",
+      "defect_type": "Center",
+      "lot_name": "lot42199",
+      "wafer_index": 10,
+      "shape": [
+        35,
+        31
+      ],
+      "rel_path": "Center/007.npy"
+    },
+    {
+      "id": "WM811K-Center-008",
+      "defect_type": "Center",
+      "lot_name": "lot39661",
+      "wafer_index": 18,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/008.npy"
+    },
+    {
+      "id": "WM811K-Center-009",
+      "defect_type": "Center",
+      "lot_name": "lot38711",
+      "wafer_index": 5,
+      "shape": [
+        31,
+        33
+      ],
+      "rel_path": "Center/009.npy"
+    },
+    {
+      "id": "WM811K-Center-010",
+      "defect_type": "Center",
+      "lot_name": "lot15661",
+      "wafer_index": 22,
+      "shape": [
+        27,
+        27
+      ],
+      "rel_path": "Center/010.npy"
+    },
+    {
+      "id": "WM811K-Center-011",
+      "defect_type": "Center",
+      "lot_name": "lot21654",
+      "wafer_index": 25,
+      "shape": [
+        35,
+        40
+      ],
+      "rel_path": "Center/011.npy"
+    },
+    {
+      "id": "WM811K-Center-012",
+      "defect_type": "Center",
+      "lot_name": "lot45899",
+      "wafer_index": 8,
+      "shape": [
+        44,
+        41
+      ],
+      "rel_path": "Center/012.npy"
+    },
+    {
+      "id": "WM811K-Center-013",
+      "defect_type": "Center",
+      "lot_name": "lot36742",
+      "wafer_index": 20,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/013.npy"
+    },
+    {
+      "id": "WM811K-Center-014",
+      "defect_type": "Center",
+      "lot_name": "lot42633",
+      "wafer_index": 25,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "Center/014.npy"
+    },
+    {
+      "id": "WM811K-Center-015",
+      "defect_type": "Center",
+      "lot_name": "lot39653",
+      "wafer_index": 18,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/015.npy"
+    },
+    {
+      "id": "WM811K-Center-016",
+      "defect_type": "Center",
+      "lot_name": "lot35964",
+      "wafer_index": 11,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/016.npy"
+    },
+    {
+      "id": "WM811K-Center-017",
+      "defect_type": "Center",
+      "lot_name": "lot39512",
+      "wafer_index": 21,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/017.npy"
+    },
+    {
+      "id": "WM811K-Center-018",
+      "defect_type": "Center",
+      "lot_name": "lot36591",
+      "wafer_index": 9,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/018.npy"
+    },
+    {
+      "id": "WM811K-Center-019",
+      "defect_type": "Center",
+      "lot_name": "lot36656",
+      "wafer_index": 11,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/019.npy"
+    },
+    {
+      "id": "WM811K-Center-020",
+      "defect_type": "Center",
+      "lot_name": "lot36667",
+      "wafer_index": 9,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/020.npy"
+    },
+    {
+      "id": "WM811K-Center-021",
+      "defect_type": "Center",
+      "lot_name": "lot36809",
+      "wafer_index": 15,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/021.npy"
+    },
+    {
+      "id": "WM811K-Center-022",
+      "defect_type": "Center",
+      "lot_name": "lot36671",
+      "wafer_index": 15,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/022.npy"
+    },
+    {
+      "id": "WM811K-Center-023",
+      "defect_type": "Center",
+      "lot_name": "lot36723",
+      "wafer_index": 10,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/023.npy"
+    },
+    {
+      "id": "WM811K-Center-024",
+      "defect_type": "Center",
+      "lot_name": "lot39610",
+      "wafer_index": 1,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/024.npy"
+    },
+    {
+      "id": "WM811K-Center-025",
+      "defect_type": "Center",
+      "lot_name": "lot45626",
+      "wafer_index": 17,
+      "shape": [
+        34,
+        34
+      ],
+      "rel_path": "Center/025.npy"
+    },
+    {
+      "id": "WM811K-Center-026",
+      "defect_type": "Center",
+      "lot_name": "lot39455",
+      "wafer_index": 12,
+      "shape": [
+        31,
+        31
+      ],
+      "rel_path": "Center/026.npy"
+    },
+    {
+      "id": "WM811K-Center-027",
+      "defect_type": "Center",
+      "lot_name": "lot36948",
+      "wafer_index": 4,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/027.npy"
+    },
+    {
+      "id": "WM811K-Center-028",
+      "defect_type": "Center",
+      "lot_name": "lot11201",
+      "wafer_index": 1,
+      "shape": [
+        52,
+        59
+      ],
+      "rel_path": "Center/028.npy"
+    },
+    {
+      "id": "WM811K-Center-029",
+      "defect_type": "Center",
+      "lot_name": "lot39584",
+      "wafer_index": 6,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Center/029.npy"
+    },
+    {
+      "id": "WM811K-Donut-000",
+      "defect_type": "Donut",
+      "lot_name": "lot42291",
+      "wafer_index": 21,
+      "shape": [
+        35,
+        31
+      ],
+      "rel_path": "Donut/000.npy"
+    },
+    {
+      "id": "WM811K-Donut-001",
+      "defect_type": "Donut",
+      "lot_name": "lot5158",
+      "wafer_index": 18,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "Donut/001.npy"
+    },
+    {
+      "id": "WM811K-Donut-002",
+      "defect_type": "Donut",
+      "lot_name": "lot17131",
+      "wafer_index": 3,
+      "shape": [
+        41,
+        42
+      ],
+      "rel_path": "Donut/002.npy"
+    },
+    {
+      "id": "WM811K-Donut-003",
+      "defect_type": "Donut",
+      "lot_name": "lot42799",
+      "wafer_index": 4,
+      "shape": [
+        38,
+        38
+      ],
+      "rel_path": "Donut/003.npy"
+    },
+    {
+      "id": "WM811K-Donut-004",
+      "defect_type": "Donut",
+      "lot_name": "lot47303",
+      "wafer_index": 9,
+      "shape": [
+        41,
+        33
+      ],
+      "rel_path": "Donut/004.npy"
+    },
+    {
+      "id": "WM811K-Donut-005",
+      "defect_type": "Donut",
+      "lot_name": "lot17150",
+      "wafer_index": 13,
+      "shape": [
+        41,
+        42
+      ],
+      "rel_path": "Donut/005.npy"
+    },
+    {
+      "id": "WM811K-Donut-006",
+      "defect_type": "Donut",
+      "lot_name": "lot17148",
+      "wafer_index": 17,
+      "shape": [
+        41,
+        42
+      ],
+      "rel_path": "Donut/006.npy"
+    },
+    {
+      "id": "WM811K-Donut-007",
+      "defect_type": "Donut",
+      "lot_name": "lot17116",
+      "wafer_index": 8,
+      "shape": [
+        41,
+        42
+      ],
+      "rel_path": "Donut/007.npy"
+    },
+    {
+      "id": "WM811K-Donut-008",
+      "defect_type": "Donut",
+      "lot_name": "lot19251",
+      "wafer_index": 14,
+      "shape": [
+        44,
+        41
+      ],
+      "rel_path": "Donut/008.npy"
+    },
+    {
+      "id": "WM811K-Donut-009",
+      "defect_type": "Donut",
+      "lot_name": "lot17174",
+      "wafer_index": 18,
+      "shape": [
+        41,
+        42
+      ],
+      "rel_path": "Donut/009.npy"
+    },
+    {
+      "id": "WM811K-Donut-010",
+      "defect_type": "Donut",
+      "lot_name": "lot42195",
+      "wafer_index": 4,
+      "shape": [
+        35,
+        31
+      ],
+      "rel_path": "Donut/010.npy"
+    },
+    {
+      "id": "WM811K-Donut-011",
+      "defect_type": "Donut",
+      "lot_name": "lot42288",
+      "wafer_index": 2,
+      "shape": [
+        35,
+        31
+      ],
+      "rel_path": "Donut/011.npy"
+    },
+    {
+      "id": "WM811K-Donut-012",
+      "defect_type": "Donut",
+      "lot_name": "lot23512",
+      "wafer_index": 22,
+      "shape": [
+        35,
+        40
+      ],
+      "rel_path": "Donut/012.npy"
+    },
+    {
+      "id": "WM811K-Donut-013",
+      "defect_type": "Donut",
+      "lot_name": "lot16541",
+      "wafer_index": 15,
+      "shape": [
+        58,
+        53
+      ],
+      "rel_path": "Donut/013.npy"
+    },
+    {
+      "id": "WM811K-Donut-014",
+      "defect_type": "Donut",
+      "lot_name": "lot42196",
+      "wafer_index": 4,
+      "shape": [
+        35,
+        31
+      ],
+      "rel_path": "Donut/014.npy"
+    },
+    {
+      "id": "WM811K-Donut-015",
+      "defect_type": "Donut",
+      "lot_name": "lot24207",
+      "wafer_index": 21,
+      "shape": [
+        35,
+        40
+      ],
+      "rel_path": "Donut/015.npy"
+    },
+    {
+      "id": "WM811K-Donut-016",
+      "defect_type": "Donut",
+      "lot_name": "lot25118",
+      "wafer_index": 9,
+      "shape": [
+        37,
+        31
+      ],
+      "rel_path": "Donut/016.npy"
+    },
+    {
+      "id": "WM811K-Donut-017",
+      "defect_type": "Donut",
+      "lot_name": "lot17150",
+      "wafer_index": 5,
+      "shape": [
+        41,
+        42
+      ],
+      "rel_path": "Donut/017.npy"
+    },
+    {
+      "id": "WM811K-Donut-018",
+      "defect_type": "Donut",
+      "lot_name": "lot44085",
+      "wafer_index": 14,
+      "shape": [
+        30,
+        34
+      ],
+      "rel_path": "Donut/018.npy"
+    },
+    {
+      "id": "WM811K-Donut-019",
+      "defect_type": "Donut",
+      "lot_name": "lot41971",
+      "wafer_index": 16,
+      "shape": [
+        35,
+        31
+      ],
+      "rel_path": "Donut/019.npy"
+    },
+    {
+      "id": "WM811K-Donut-020",
+      "defect_type": "Donut",
+      "lot_name": "lot17169",
+      "wafer_index": 22,
+      "shape": [
+        41,
+        42
+      ],
+      "rel_path": "Donut/020.npy"
+    },
+    {
+      "id": "WM811K-Donut-021",
+      "defect_type": "Donut",
+      "lot_name": "lot27673",
+      "wafer_index": 8,
+      "shape": [
+        32,
+        29
+      ],
+      "rel_path": "Donut/021.npy"
+    },
+    {
+      "id": "WM811K-Donut-022",
+      "defect_type": "Donut",
+      "lot_name": "lot17155",
+      "wafer_index": 22,
+      "shape": [
+        41,
+        42
+      ],
+      "rel_path": "Donut/022.npy"
+    },
+    {
+      "id": "WM811K-Donut-023",
+      "defect_type": "Donut",
+      "lot_name": "lot17146",
+      "wafer_index": 19,
+      "shape": [
+        41,
+        42
+      ],
+      "rel_path": "Donut/023.npy"
+    },
+    {
+      "id": "WM811K-Donut-024",
+      "defect_type": "Donut",
+      "lot_name": "lot40878",
+      "wafer_index": 2,
+      "shape": [
+        30,
+        34
+      ],
+      "rel_path": "Donut/024.npy"
+    },
+    {
+      "id": "WM811K-Donut-025",
+      "defect_type": "Donut",
+      "lot_name": "lot17169",
+      "wafer_index": 24,
+      "shape": [
+        41,
+        42
+      ],
+      "rel_path": "Donut/025.npy"
+    },
+    {
+      "id": "WM811K-Donut-026",
+      "defect_type": "Donut",
+      "lot_name": "lot7747",
+      "wafer_index": 11,
+      "shape": [
+        59,
+        67
+      ],
+      "rel_path": "Donut/026.npy"
+    },
+    {
+      "id": "WM811K-Donut-027",
+      "defect_type": "Donut",
+      "lot_name": "lot17168",
+      "wafer_index": 3,
+      "shape": [
+        41,
+        42
+      ],
+      "rel_path": "Donut/027.npy"
+    },
+    {
+      "id": "WM811K-Donut-028",
+      "defect_type": "Donut",
+      "lot_name": "lot17125",
+      "wafer_index": 14,
+      "shape": [
+        41,
+        42
+      ],
+      "rel_path": "Donut/028.npy"
+    },
+    {
+      "id": "WM811K-Donut-029",
+      "defect_type": "Donut",
+      "lot_name": "lot42247",
+      "wafer_index": 17,
+      "shape": [
+        35,
+        31
+      ],
+      "rel_path": "Donut/029.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-000",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot43548",
+      "wafer_index": 20,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Edge-Loc/000.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-001",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot42714",
+      "wafer_index": 1,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "Edge-Loc/001.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-002",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot42941",
+      "wafer_index": 9,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Edge-Loc/002.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-003",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot40484",
+      "wafer_index": 15,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "Edge-Loc/003.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-004",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot45508",
+      "wafer_index": 22,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "Edge-Loc/004.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-005",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot44243",
+      "wafer_index": 22,
+      "shape": [
+        33,
+        29
+      ],
+      "rel_path": "Edge-Loc/005.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-006",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot15307",
+      "wafer_index": 6,
+      "shape": [
+        81,
+        73
+      ],
+      "rel_path": "Edge-Loc/006.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-007",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot4474",
+      "wafer_index": 24,
+      "shape": [
+        32,
+        29
+      ],
+      "rel_path": "Edge-Loc/007.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-008",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot15851",
+      "wafer_index": 3,
+      "shape": [
+        42,
+        41
+      ],
+      "rel_path": "Edge-Loc/008.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-009",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot45711",
+      "wafer_index": 9,
+      "shape": [
+        44,
+        41
+      ],
+      "rel_path": "Edge-Loc/009.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-010",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot2456",
+      "wafer_index": 4,
+      "shape": [
+        33,
+        29
+      ],
+      "rel_path": "Edge-Loc/010.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-011",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot44491",
+      "wafer_index": 25,
+      "shape": [
+        33,
+        29
+      ],
+      "rel_path": "Edge-Loc/011.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-012",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot2023",
+      "wafer_index": 20,
+      "shape": [
+        30,
+        34
+      ],
+      "rel_path": "Edge-Loc/012.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-013",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot40913",
+      "wafer_index": 21,
+      "shape": [
+        30,
+        34
+      ],
+      "rel_path": "Edge-Loc/013.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-014",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot47506",
+      "wafer_index": 11,
+      "shape": [
+        26,
+        30
+      ],
+      "rel_path": "Edge-Loc/014.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-015",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot45888",
+      "wafer_index": 18,
+      "shape": [
+        44,
+        41
+      ],
+      "rel_path": "Edge-Loc/015.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-016",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot24897",
+      "wafer_index": 18,
+      "shape": [
+        51,
+        59
+      ],
+      "rel_path": "Edge-Loc/016.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-017",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot22176",
+      "wafer_index": 1,
+      "shape": [
+        54,
+        71
+      ],
+      "rel_path": "Edge-Loc/017.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-018",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot4666",
+      "wafer_index": 16,
+      "shape": [
+        56,
+        41
+      ],
+      "rel_path": "Edge-Loc/018.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-019",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot38199",
+      "wafer_index": 2,
+      "shape": [
+        32,
+        29
+      ],
+      "rel_path": "Edge-Loc/019.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-020",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot43901",
+      "wafer_index": 20,
+      "shape": [
+        25,
+        26
+      ],
+      "rel_path": "Edge-Loc/020.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-021",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot40492",
+      "wafer_index": 22,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "Edge-Loc/021.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-022",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot42840",
+      "wafer_index": 19,
+      "shape": [
+        31,
+        31
+      ],
+      "rel_path": "Edge-Loc/022.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-023",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot43041",
+      "wafer_index": 12,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Edge-Loc/023.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-024",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot47531",
+      "wafer_index": 14,
+      "shape": [
+        26,
+        30
+      ],
+      "rel_path": "Edge-Loc/024.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-025",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot45893",
+      "wafer_index": 8,
+      "shape": [
+        44,
+        41
+      ],
+      "rel_path": "Edge-Loc/025.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-026",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot42931",
+      "wafer_index": 19,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Edge-Loc/026.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-027",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot12171",
+      "wafer_index": 23,
+      "shape": [
+        51,
+        30
+      ],
+      "rel_path": "Edge-Loc/027.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-028",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot5179",
+      "wafer_index": 19,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "Edge-Loc/028.npy"
+    },
+    {
+      "id": "WM811K-Edge-Loc-029",
+      "defect_type": "Edge-Loc",
+      "lot_name": "lot18725",
+      "wafer_index": 19,
+      "shape": [
+        35,
+        40
+      ],
+      "rel_path": "Edge-Loc/029.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-000",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot18398",
+      "wafer_index": 5,
+      "shape": [
+        123,
+        136
+      ],
+      "rel_path": "Edge-Ring/000.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-001",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot20728",
+      "wafer_index": 16,
+      "shape": [
+        53,
+        52
+      ],
+      "rel_path": "Edge-Ring/001.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-002",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot18022",
+      "wafer_index": 7,
+      "shape": [
+        53,
+        52
+      ],
+      "rel_path": "Edge-Ring/002.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-003",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot20733",
+      "wafer_index": 9,
+      "shape": [
+        53,
+        52
+      ],
+      "rel_path": "Edge-Ring/003.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-004",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot9147",
+      "wafer_index": 23,
+      "shape": [
+        69,
+        73
+      ],
+      "rel_path": "Edge-Ring/004.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-005",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot11988",
+      "wafer_index": 9,
+      "shape": [
+        41,
+        41
+      ],
+      "rel_path": "Edge-Ring/005.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-006",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot11172",
+      "wafer_index": 24,
+      "shape": [
+        69,
+        73
+      ],
+      "rel_path": "Edge-Ring/006.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-007",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot44166",
+      "wafer_index": 14,
+      "shape": [
+        38,
+        36
+      ],
+      "rel_path": "Edge-Ring/007.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-008",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot7397",
+      "wafer_index": 4,
+      "shape": [
+        41,
+        41
+      ],
+      "rel_path": "Edge-Ring/008.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-009",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot14395",
+      "wafer_index": 4,
+      "shape": [
+        100,
+        72
+      ],
+      "rel_path": "Edge-Ring/009.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-010",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot14775",
+      "wafer_index": 6,
+      "shape": [
+        57,
+        55
+      ],
+      "rel_path": "Edge-Ring/010.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-011",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot44786",
+      "wafer_index": 5,
+      "shape": [
+        43,
+        42
+      ],
+      "rel_path": "Edge-Ring/011.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-012",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot9149",
+      "wafer_index": 22,
+      "shape": [
+        69,
+        73
+      ],
+      "rel_path": "Edge-Ring/012.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-013",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot44811",
+      "wafer_index": 5,
+      "shape": [
+        43,
+        42
+      ],
+      "rel_path": "Edge-Ring/013.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-014",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot12906",
+      "wafer_index": 3,
+      "shape": [
+        38,
+        36
+      ],
+      "rel_path": "Edge-Ring/014.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-015",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot20736",
+      "wafer_index": 6,
+      "shape": [
+        53,
+        52
+      ],
+      "rel_path": "Edge-Ring/015.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-016",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot14822",
+      "wafer_index": 24,
+      "shape": [
+        48,
+        52
+      ],
+      "rel_path": "Edge-Ring/016.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-017",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot44816",
+      "wafer_index": 21,
+      "shape": [
+        43,
+        42
+      ],
+      "rel_path": "Edge-Ring/017.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-018",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot14323",
+      "wafer_index": 12,
+      "shape": [
+        56,
+        48
+      ],
+      "rel_path": "Edge-Ring/018.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-019",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot2524",
+      "wafer_index": 13,
+      "shape": [
+        38,
+        36
+      ],
+      "rel_path": "Edge-Ring/019.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-020",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot44162",
+      "wafer_index": 16,
+      "shape": [
+        38,
+        36
+      ],
+      "rel_path": "Edge-Ring/020.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-021",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot14775",
+      "wafer_index": 19,
+      "shape": [
+        57,
+        55
+      ],
+      "rel_path": "Edge-Ring/021.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-022",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot12770",
+      "wafer_index": 18,
+      "shape": [
+        63,
+        62
+      ],
+      "rel_path": "Edge-Ring/022.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-023",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot13491",
+      "wafer_index": 2,
+      "shape": [
+        38,
+        36
+      ],
+      "rel_path": "Edge-Ring/023.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-024",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot12761",
+      "wafer_index": 9,
+      "shape": [
+        63,
+        62
+      ],
+      "rel_path": "Edge-Ring/024.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-025",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot2512",
+      "wafer_index": 8,
+      "shape": [
+        38,
+        36
+      ],
+      "rel_path": "Edge-Ring/025.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-026",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot11878",
+      "wafer_index": 13,
+      "shape": [
+        63,
+        62
+      ],
+      "rel_path": "Edge-Ring/026.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-027",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot12759",
+      "wafer_index": 24,
+      "shape": [
+        63,
+        62
+      ],
+      "rel_path": "Edge-Ring/027.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-028",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot14775",
+      "wafer_index": 3,
+      "shape": [
+        57,
+        55
+      ],
+      "rel_path": "Edge-Ring/028.npy"
+    },
+    {
+      "id": "WM811K-Edge-Ring-029",
+      "defect_type": "Edge-Ring",
+      "lot_name": "lot21580",
+      "wafer_index": 25,
+      "shape": [
+        53,
+        52
+      ],
+      "rel_path": "Edge-Ring/029.npy"
+    },
+    {
+      "id": "WM811K-Loc-000",
+      "defect_type": "Loc",
+      "lot_name": "lot21764",
+      "wafer_index": 23,
+      "shape": [
+        35,
+        40
+      ],
+      "rel_path": "Loc/000.npy"
+    },
+    {
+      "id": "WM811K-Loc-001",
+      "defect_type": "Loc",
+      "lot_name": "lot42685",
+      "wafer_index": 16,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "Loc/001.npy"
+    },
+    {
+      "id": "WM811K-Loc-002",
+      "defect_type": "Loc",
+      "lot_name": "lot45240",
+      "wafer_index": 16,
+      "shape": [
+        27,
+        25
+      ],
+      "rel_path": "Loc/002.npy"
+    },
+    {
+      "id": "WM811K-Loc-003",
+      "defect_type": "Loc",
+      "lot_name": "lot44880",
+      "wafer_index": 8,
+      "shape": [
+        27,
+        25
+      ],
+      "rel_path": "Loc/003.npy"
+    },
+    {
+      "id": "WM811K-Loc-004",
+      "defect_type": "Loc",
+      "lot_name": "lot42293",
+      "wafer_index": 20,
+      "shape": [
+        35,
+        31
+      ],
+      "rel_path": "Loc/004.npy"
+    },
+    {
+      "id": "WM811K-Loc-005",
+      "defect_type": "Loc",
+      "lot_name": "lot43144",
+      "wafer_index": 16,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Loc/005.npy"
+    },
+    {
+      "id": "WM811K-Loc-006",
+      "defect_type": "Loc",
+      "lot_name": "lot42325",
+      "wafer_index": 3,
+      "shape": [
+        35,
+        31
+      ],
+      "rel_path": "Loc/006.npy"
+    },
+    {
+      "id": "WM811K-Loc-007",
+      "defect_type": "Loc",
+      "lot_name": "lot21650",
+      "wafer_index": 12,
+      "shape": [
+        35,
+        40
+      ],
+      "rel_path": "Loc/007.npy"
+    },
+    {
+      "id": "WM811K-Loc-008",
+      "defect_type": "Loc",
+      "lot_name": "lot40362",
+      "wafer_index": 16,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "Loc/008.npy"
+    },
+    {
+      "id": "WM811K-Loc-009",
+      "defect_type": "Loc",
+      "lot_name": "lot15381",
+      "wafer_index": 16,
+      "shape": [
+        50,
+        43
+      ],
+      "rel_path": "Loc/009.npy"
+    },
+    {
+      "id": "WM811K-Loc-010",
+      "defect_type": "Loc",
+      "lot_name": "lot43532",
+      "wafer_index": 19,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Loc/010.npy"
+    },
+    {
+      "id": "WM811K-Loc-011",
+      "defect_type": "Loc",
+      "lot_name": "lot42287",
+      "wafer_index": 3,
+      "shape": [
+        35,
+        31
+      ],
+      "rel_path": "Loc/011.npy"
+    },
+    {
+      "id": "WM811K-Loc-012",
+      "defect_type": "Loc",
+      "lot_name": "lot6467",
+      "wafer_index": 17,
+      "shape": [
+        39,
+        31
+      ],
+      "rel_path": "Loc/012.npy"
+    },
+    {
+      "id": "WM811K-Loc-013",
+      "defect_type": "Loc",
+      "lot_name": "lot11286",
+      "wafer_index": 11,
+      "shape": [
+        52,
+        59
+      ],
+      "rel_path": "Loc/013.npy"
+    },
+    {
+      "id": "WM811K-Loc-014",
+      "defect_type": "Loc",
+      "lot_name": "lot14515",
+      "wafer_index": 14,
+      "shape": [
+        36,
+        34
+      ],
+      "rel_path": "Loc/014.npy"
+    },
+    {
+      "id": "WM811K-Loc-015",
+      "defect_type": "Loc",
+      "lot_name": "lot9816",
+      "wafer_index": 14,
+      "shape": [
+        64,
+        71
+      ],
+      "rel_path": "Loc/015.npy"
+    },
+    {
+      "id": "WM811K-Loc-016",
+      "defect_type": "Loc",
+      "lot_name": "lot46600",
+      "wafer_index": 20,
+      "shape": [
+        33,
+        37
+      ],
+      "rel_path": "Loc/016.npy"
+    },
+    {
+      "id": "WM811K-Loc-017",
+      "defect_type": "Loc",
+      "lot_name": "lot40455",
+      "wafer_index": 1,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "Loc/017.npy"
+    },
+    {
+      "id": "WM811K-Loc-018",
+      "defect_type": "Loc",
+      "lot_name": "lot15284",
+      "wafer_index": 7,
+      "shape": [
+        152,
+        172
+      ],
+      "rel_path": "Loc/018.npy"
+    },
+    {
+      "id": "WM811K-Loc-019",
+      "defect_type": "Loc",
+      "lot_name": "lot7240",
+      "wafer_index": 11,
+      "shape": [
+        35,
+        31
+      ],
+      "rel_path": "Loc/019.npy"
+    },
+    {
+      "id": "WM811K-Loc-020",
+      "defect_type": "Loc",
+      "lot_name": "lot47494",
+      "wafer_index": 10,
+      "shape": [
+        26,
+        30
+      ],
+      "rel_path": "Loc/020.npy"
+    },
+    {
+      "id": "WM811K-Loc-021",
+      "defect_type": "Loc",
+      "lot_name": "lot6331",
+      "wafer_index": 8,
+      "shape": [
+        39,
+        31
+      ],
+      "rel_path": "Loc/021.npy"
+    },
+    {
+      "id": "WM811K-Loc-022",
+      "defect_type": "Loc",
+      "lot_name": "lot15058",
+      "wafer_index": 20,
+      "shape": [
+        80,
+        77
+      ],
+      "rel_path": "Loc/022.npy"
+    },
+    {
+      "id": "WM811K-Loc-023",
+      "defect_type": "Loc",
+      "lot_name": "lot42659",
+      "wafer_index": 1,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "Loc/023.npy"
+    },
+    {
+      "id": "WM811K-Loc-024",
+      "defect_type": "Loc",
+      "lot_name": "lot43140",
+      "wafer_index": 23,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Loc/024.npy"
+    },
+    {
+      "id": "WM811K-Loc-025",
+      "defect_type": "Loc",
+      "lot_name": "lot42885",
+      "wafer_index": 22,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Loc/025.npy"
+    },
+    {
+      "id": "WM811K-Loc-026",
+      "defect_type": "Loc",
+      "lot_name": "lot40912",
+      "wafer_index": 4,
+      "shape": [
+        30,
+        34
+      ],
+      "rel_path": "Loc/026.npy"
+    },
+    {
+      "id": "WM811K-Loc-027",
+      "defect_type": "Loc",
+      "lot_name": "lot23174",
+      "wafer_index": 2,
+      "shape": [
+        35,
+        40
+      ],
+      "rel_path": "Loc/027.npy"
+    },
+    {
+      "id": "WM811K-Loc-028",
+      "defect_type": "Loc",
+      "lot_name": "lot44317",
+      "wafer_index": 3,
+      "shape": [
+        33,
+        29
+      ],
+      "rel_path": "Loc/028.npy"
+    },
+    {
+      "id": "WM811K-Loc-029",
+      "defect_type": "Loc",
+      "lot_name": "lot3868",
+      "wafer_index": 25,
+      "shape": [
+        39,
+        31
+      ],
+      "rel_path": "Loc/029.npy"
+    },
+    {
+      "id": "WM811K-Random-000",
+      "defect_type": "Random",
+      "lot_name": "lot13907",
+      "wafer_index": 22,
+      "shape": [
+        32,
+        35
+      ],
+      "rel_path": "Random/000.npy"
+    },
+    {
+      "id": "WM811K-Random-001",
+      "defect_type": "Random",
+      "lot_name": "lot43131",
+      "wafer_index": 20,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Random/001.npy"
+    },
+    {
+      "id": "WM811K-Random-002",
+      "defect_type": "Random",
+      "lot_name": "lot10049",
+      "wafer_index": 7,
+      "shape": [
+        41,
+        41
+      ],
+      "rel_path": "Random/002.npy"
+    },
+    {
+      "id": "WM811K-Random-003",
+      "defect_type": "Random",
+      "lot_name": "lot2425",
+      "wafer_index": 6,
+      "shape": [
+        41,
+        41
+      ],
+      "rel_path": "Random/003.npy"
+    },
+    {
+      "id": "WM811K-Random-004",
+      "defect_type": "Random",
+      "lot_name": "lot2426",
+      "wafer_index": 15,
+      "shape": [
+        41,
+        41
+      ],
+      "rel_path": "Random/004.npy"
+    },
+    {
+      "id": "WM811K-Random-005",
+      "defect_type": "Random",
+      "lot_name": "lot17102",
+      "wafer_index": 16,
+      "shape": [
+        41,
+        42
+      ],
+      "rel_path": "Random/005.npy"
+    },
+    {
+      "id": "WM811K-Random-006",
+      "defect_type": "Random",
+      "lot_name": "lot35140",
+      "wafer_index": 13,
+      "shape": [
+        31,
+        31
+      ],
+      "rel_path": "Random/006.npy"
+    },
+    {
+      "id": "WM811K-Random-007",
+      "defect_type": "Random",
+      "lot_name": "lot41566",
+      "wafer_index": 21,
+      "shape": [
+        32,
+        29
+      ],
+      "rel_path": "Random/007.npy"
+    },
+    {
+      "id": "WM811K-Random-008",
+      "defect_type": "Random",
+      "lot_name": "lot21444",
+      "wafer_index": 5,
+      "shape": [
+        35,
+        40
+      ],
+      "rel_path": "Random/008.npy"
+    },
+    {
+      "id": "WM811K-Random-009",
+      "defect_type": "Random",
+      "lot_name": "lot15296",
+      "wafer_index": 17,
+      "shape": [
+        58,
+        60
+      ],
+      "rel_path": "Random/009.npy"
+    },
+    {
+      "id": "WM811K-Random-010",
+      "defect_type": "Random",
+      "lot_name": "lot15121",
+      "wafer_index": 11,
+      "shape": [
+        58,
+        60
+      ],
+      "rel_path": "Random/010.npy"
+    },
+    {
+      "id": "WM811K-Random-011",
+      "defect_type": "Random",
+      "lot_name": "lot45634",
+      "wafer_index": 17,
+      "shape": [
+        34,
+        34
+      ],
+      "rel_path": "Random/011.npy"
+    },
+    {
+      "id": "WM811K-Random-012",
+      "defect_type": "Random",
+      "lot_name": "lot45716",
+      "wafer_index": 20,
+      "shape": [
+        44,
+        41
+      ],
+      "rel_path": "Random/012.npy"
+    },
+    {
+      "id": "WM811K-Random-013",
+      "defect_type": "Random",
+      "lot_name": "lot193",
+      "wafer_index": 14,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "Random/013.npy"
+    },
+    {
+      "id": "WM811K-Random-014",
+      "defect_type": "Random",
+      "lot_name": "lot40339",
+      "wafer_index": 25,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "Random/014.npy"
+    },
+    {
+      "id": "WM811K-Random-015",
+      "defect_type": "Random",
+      "lot_name": "lot40375",
+      "wafer_index": 24,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "Random/015.npy"
+    },
+    {
+      "id": "WM811K-Random-016",
+      "defect_type": "Random",
+      "lot_name": "lot47492",
+      "wafer_index": 7,
+      "shape": [
+        26,
+        30
+      ],
+      "rel_path": "Random/016.npy"
+    },
+    {
+      "id": "WM811K-Random-017",
+      "defect_type": "Random",
+      "lot_name": "lot15128",
+      "wafer_index": 17,
+      "shape": [
+        41,
+        51
+      ],
+      "rel_path": "Random/017.npy"
+    },
+    {
+      "id": "WM811K-Random-018",
+      "defect_type": "Random",
+      "lot_name": "lot41594",
+      "wafer_index": 6,
+      "shape": [
+        32,
+        29
+      ],
+      "rel_path": "Random/018.npy"
+    },
+    {
+      "id": "WM811K-Random-019",
+      "defect_type": "Random",
+      "lot_name": "lot40438",
+      "wafer_index": 12,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "Random/019.npy"
+    },
+    {
+      "id": "WM811K-Random-020",
+      "defect_type": "Random",
+      "lot_name": "lot18737",
+      "wafer_index": 24,
+      "shape": [
+        35,
+        40
+      ],
+      "rel_path": "Random/020.npy"
+    },
+    {
+      "id": "WM811K-Random-021",
+      "defect_type": "Random",
+      "lot_name": "lot13907",
+      "wafer_index": 6,
+      "shape": [
+        32,
+        35
+      ],
+      "rel_path": "Random/021.npy"
+    },
+    {
+      "id": "WM811K-Random-022",
+      "defect_type": "Random",
+      "lot_name": "lot138",
+      "wafer_index": 7,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "Random/022.npy"
+    },
+    {
+      "id": "WM811K-Random-023",
+      "defect_type": "Random",
+      "lot_name": "lot45352",
+      "wafer_index": 20,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "Random/023.npy"
+    },
+    {
+      "id": "WM811K-Random-024",
+      "defect_type": "Random",
+      "lot_name": "lot14310",
+      "wafer_index": 9,
+      "shape": [
+        28,
+        28
+      ],
+      "rel_path": "Random/024.npy"
+    },
+    {
+      "id": "WM811K-Random-025",
+      "defect_type": "Random",
+      "lot_name": "lot2423",
+      "wafer_index": 20,
+      "shape": [
+        41,
+        41
+      ],
+      "rel_path": "Random/025.npy"
+    },
+    {
+      "id": "WM811K-Random-026",
+      "defect_type": "Random",
+      "lot_name": "lot13907",
+      "wafer_index": 4,
+      "shape": [
+        32,
+        35
+      ],
+      "rel_path": "Random/026.npy"
+    },
+    {
+      "id": "WM811K-Random-027",
+      "defect_type": "Random",
+      "lot_name": "lot43889",
+      "wafer_index": 10,
+      "shape": [
+        25,
+        26
+      ],
+      "rel_path": "Random/027.npy"
+    },
+    {
+      "id": "WM811K-Random-028",
+      "defect_type": "Random",
+      "lot_name": "lot46104",
+      "wafer_index": 22,
+      "shape": [
+        39,
+        50
+      ],
+      "rel_path": "Random/028.npy"
+    },
+    {
+      "id": "WM811K-Random-029",
+      "defect_type": "Random",
+      "lot_name": "lot43867",
+      "wafer_index": 1,
+      "shape": [
+        34,
+        31
+      ],
+      "rel_path": "Random/029.npy"
+    },
+    {
+      "id": "WM811K-Scratch-000",
+      "defect_type": "Scratch",
+      "lot_name": "lot46344",
+      "wafer_index": 23,
+      "shape": [
+        42,
+        44
+      ],
+      "rel_path": "Scratch/000.npy"
+    },
+    {
+      "id": "WM811K-Scratch-001",
+      "defect_type": "Scratch",
+      "lot_name": "lot15076",
+      "wafer_index": 13,
+      "shape": [
+        65,
+        60
+      ],
+      "rel_path": "Scratch/001.npy"
+    },
+    {
+      "id": "WM811K-Scratch-002",
+      "defect_type": "Scratch",
+      "lot_name": "lot46795",
+      "wafer_index": 12,
+      "shape": [
+        29,
+        26
+      ],
+      "rel_path": "Scratch/002.npy"
+    },
+    {
+      "id": "WM811K-Scratch-003",
+      "defect_type": "Scratch",
+      "lot_name": "lot11300",
+      "wafer_index": 23,
+      "shape": [
+        52,
+        59
+      ],
+      "rel_path": "Scratch/003.npy"
+    },
+    {
+      "id": "WM811K-Scratch-004",
+      "defect_type": "Scratch",
+      "lot_name": "lot18477",
+      "wafer_index": 17,
+      "shape": [
+        72,
+        72
+      ],
+      "rel_path": "Scratch/004.npy"
+    },
+    {
+      "id": "WM811K-Scratch-005",
+      "defect_type": "Scratch",
+      "lot_name": "lot45586",
+      "wafer_index": 3,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "Scratch/005.npy"
+    },
+    {
+      "id": "WM811K-Scratch-006",
+      "defect_type": "Scratch",
+      "lot_name": "lot47227",
+      "wafer_index": 15,
+      "shape": [
+        33,
+        35
+      ],
+      "rel_path": "Scratch/006.npy"
+    },
+    {
+      "id": "WM811K-Scratch-007",
+      "defect_type": "Scratch",
+      "lot_name": "lot42191",
+      "wafer_index": 18,
+      "shape": [
+        35,
+        31
+      ],
+      "rel_path": "Scratch/007.npy"
+    },
+    {
+      "id": "WM811K-Scratch-008",
+      "defect_type": "Scratch",
+      "lot_name": "lot46832",
+      "wafer_index": 2,
+      "shape": [
+        29,
+        26
+      ],
+      "rel_path": "Scratch/008.npy"
+    },
+    {
+      "id": "WM811K-Scratch-009",
+      "defect_type": "Scratch",
+      "lot_name": "lot29259",
+      "wafer_index": 7,
+      "shape": [
+        49,
+        39
+      ],
+      "rel_path": "Scratch/009.npy"
+    },
+    {
+      "id": "WM811K-Scratch-010",
+      "defect_type": "Scratch",
+      "lot_name": "lot46835",
+      "wafer_index": 7,
+      "shape": [
+        29,
+        26
+      ],
+      "rel_path": "Scratch/010.npy"
+    },
+    {
+      "id": "WM811K-Scratch-011",
+      "defect_type": "Scratch",
+      "lot_name": "lot39997",
+      "wafer_index": 16,
+      "shape": [
+        32,
+        29
+      ],
+      "rel_path": "Scratch/011.npy"
+    },
+    {
+      "id": "WM811K-Scratch-012",
+      "defect_type": "Scratch",
+      "lot_name": "lot13479",
+      "wafer_index": 8,
+      "shape": [
+        212,
+        84
+      ],
+      "rel_path": "Scratch/012.npy"
+    },
+    {
+      "id": "WM811K-Scratch-013",
+      "defect_type": "Scratch",
+      "lot_name": "lot20411",
+      "wafer_index": 5,
+      "shape": [
+        64,
+        72
+      ],
+      "rel_path": "Scratch/013.npy"
+    },
+    {
+      "id": "WM811K-Scratch-014",
+      "defect_type": "Scratch",
+      "lot_name": "lot45830",
+      "wafer_index": 23,
+      "shape": [
+        44,
+        41
+      ],
+      "rel_path": "Scratch/014.npy"
+    },
+    {
+      "id": "WM811K-Scratch-015",
+      "defect_type": "Scratch",
+      "lot_name": "lot122",
+      "wafer_index": 22,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "Scratch/015.npy"
+    },
+    {
+      "id": "WM811K-Scratch-016",
+      "defect_type": "Scratch",
+      "lot_name": "lot32161",
+      "wafer_index": 12,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Scratch/016.npy"
+    },
+    {
+      "id": "WM811K-Scratch-017",
+      "defect_type": "Scratch",
+      "lot_name": "lot17575",
+      "wafer_index": 16,
+      "shape": [
+        51,
+        59
+      ],
+      "rel_path": "Scratch/017.npy"
+    },
+    {
+      "id": "WM811K-Scratch-018",
+      "defect_type": "Scratch",
+      "lot_name": "lot22041",
+      "wafer_index": 18,
+      "shape": [
+        50,
+        43
+      ],
+      "rel_path": "Scratch/018.npy"
+    },
+    {
+      "id": "WM811K-Scratch-019",
+      "defect_type": "Scratch",
+      "lot_name": "lot1291",
+      "wafer_index": 2,
+      "shape": [
+        50,
+        43
+      ],
+      "rel_path": "Scratch/019.npy"
+    },
+    {
+      "id": "WM811K-Scratch-020",
+      "defect_type": "Scratch",
+      "lot_name": "lot40894",
+      "wafer_index": 6,
+      "shape": [
+        30,
+        34
+      ],
+      "rel_path": "Scratch/020.npy"
+    },
+    {
+      "id": "WM811K-Scratch-021",
+      "defect_type": "Scratch",
+      "lot_name": "lot17292",
+      "wafer_index": 16,
+      "shape": [
+        116,
+        146
+      ],
+      "rel_path": "Scratch/021.npy"
+    },
+    {
+      "id": "WM811K-Scratch-022",
+      "defect_type": "Scratch",
+      "lot_name": "lot11177",
+      "wafer_index": 1,
+      "shape": [
+        52,
+        59
+      ],
+      "rel_path": "Scratch/022.npy"
+    },
+    {
+      "id": "WM811K-Scratch-023",
+      "defect_type": "Scratch",
+      "lot_name": "lot44206",
+      "wafer_index": 7,
+      "shape": [
+        33,
+        29
+      ],
+      "rel_path": "Scratch/023.npy"
+    },
+    {
+      "id": "WM811K-Scratch-024",
+      "defect_type": "Scratch",
+      "lot_name": "lot47295",
+      "wafer_index": 11,
+      "shape": [
+        41,
+        33
+      ],
+      "rel_path": "Scratch/024.npy"
+    },
+    {
+      "id": "WM811K-Scratch-025",
+      "defect_type": "Scratch",
+      "lot_name": "lot45636",
+      "wafer_index": 16,
+      "shape": [
+        34,
+        34
+      ],
+      "rel_path": "Scratch/025.npy"
+    },
+    {
+      "id": "WM811K-Scratch-026",
+      "defect_type": "Scratch",
+      "lot_name": "lot45576",
+      "wafer_index": 12,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "Scratch/026.npy"
+    },
+    {
+      "id": "WM811K-Scratch-027",
+      "defect_type": "Scratch",
+      "lot_name": "lot47420",
+      "wafer_index": 13,
+      "shape": [
+        41,
+        33
+      ],
+      "rel_path": "Scratch/027.npy"
+    },
+    {
+      "id": "WM811K-Scratch-028",
+      "defect_type": "Scratch",
+      "lot_name": "lot46784",
+      "wafer_index": 5,
+      "shape": [
+        29,
+        26
+      ],
+      "rel_path": "Scratch/028.npy"
+    },
+    {
+      "id": "WM811K-Scratch-029",
+      "defect_type": "Scratch",
+      "lot_name": "lot47282",
+      "wafer_index": 25,
+      "shape": [
+        41,
+        33
+      ],
+      "rel_path": "Scratch/029.npy"
+    },
+    {
+      "id": "WM811K-Near-full-000",
+      "defect_type": "Near-full",
+      "lot_name": "lot42885",
+      "wafer_index": 19,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Near-full/000.npy"
+    },
+    {
+      "id": "WM811K-Near-full-001",
+      "defect_type": "Near-full",
+      "lot_name": "lot44184",
+      "wafer_index": 21,
+      "shape": [
+        33,
+        29
+      ],
+      "rel_path": "Near-full/001.npy"
+    },
+    {
+      "id": "WM811K-Near-full-002",
+      "defect_type": "Near-full",
+      "lot_name": "lot44480",
+      "wafer_index": 18,
+      "shape": [
+        33,
+        29
+      ],
+      "rel_path": "Near-full/002.npy"
+    },
+    {
+      "id": "WM811K-Near-full-003",
+      "defect_type": "Near-full",
+      "lot_name": "lot40960",
+      "wafer_index": 18,
+      "shape": [
+        30,
+        34
+      ],
+      "rel_path": "Near-full/003.npy"
+    },
+    {
+      "id": "WM811K-Near-full-004",
+      "defect_type": "Near-full",
+      "lot_name": "lot142",
+      "wafer_index": 25,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "Near-full/004.npy"
+    },
+    {
+      "id": "WM811K-Near-full-005",
+      "defect_type": "Near-full",
+      "lot_name": "lot45573",
+      "wafer_index": 22,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "Near-full/005.npy"
+    },
+    {
+      "id": "WM811K-Near-full-006",
+      "defect_type": "Near-full",
+      "lot_name": "lot47440",
+      "wafer_index": 6,
+      "shape": [
+        41,
+        33
+      ],
+      "rel_path": "Near-full/006.npy"
+    },
+    {
+      "id": "WM811K-Near-full-007",
+      "defect_type": "Near-full",
+      "lot_name": "lot45573",
+      "wafer_index": 8,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "Near-full/007.npy"
+    },
+    {
+      "id": "WM811K-Near-full-008",
+      "defect_type": "Near-full",
+      "lot_name": "lot47180",
+      "wafer_index": 10,
+      "shape": [
+        29,
+        26
+      ],
+      "rel_path": "Near-full/008.npy"
+    },
+    {
+      "id": "WM811K-Near-full-009",
+      "defect_type": "Near-full",
+      "lot_name": "lot45576",
+      "wafer_index": 15,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "Near-full/009.npy"
+    },
+    {
+      "id": "WM811K-Near-full-010",
+      "defect_type": "Near-full",
+      "lot_name": "lot43070",
+      "wafer_index": 20,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Near-full/010.npy"
+    },
+    {
+      "id": "WM811K-Near-full-011",
+      "defect_type": "Near-full",
+      "lot_name": "lot47444",
+      "wafer_index": 4,
+      "shape": [
+        41,
+        33
+      ],
+      "rel_path": "Near-full/011.npy"
+    },
+    {
+      "id": "WM811K-Near-full-012",
+      "defect_type": "Near-full",
+      "lot_name": "lot15448",
+      "wafer_index": 5,
+      "shape": [
+        62,
+        75
+      ],
+      "rel_path": "Near-full/012.npy"
+    },
+    {
+      "id": "WM811K-Near-full-013",
+      "defect_type": "Near-full",
+      "lot_name": "lot127",
+      "wafer_index": 2,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "Near-full/013.npy"
+    },
+    {
+      "id": "WM811K-Near-full-014",
+      "defect_type": "Near-full",
+      "lot_name": "lot40395",
+      "wafer_index": 5,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "Near-full/014.npy"
+    },
+    {
+      "id": "WM811K-Near-full-015",
+      "defect_type": "Near-full",
+      "lot_name": "lot43474",
+      "wafer_index": 20,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Near-full/015.npy"
+    },
+    {
+      "id": "WM811K-Near-full-016",
+      "defect_type": "Near-full",
+      "lot_name": "lot44185",
+      "wafer_index": 3,
+      "shape": [
+        33,
+        29
+      ],
+      "rel_path": "Near-full/016.npy"
+    },
+    {
+      "id": "WM811K-Near-full-017",
+      "defect_type": "Near-full",
+      "lot_name": "lot44503",
+      "wafer_index": 13,
+      "shape": [
+        33,
+        29
+      ],
+      "rel_path": "Near-full/017.npy"
+    },
+    {
+      "id": "WM811K-Near-full-018",
+      "defect_type": "Near-full",
+      "lot_name": "lot43010",
+      "wafer_index": 20,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Near-full/018.npy"
+    },
+    {
+      "id": "WM811K-Near-full-019",
+      "defect_type": "Near-full",
+      "lot_name": "lot15558",
+      "wafer_index": 3,
+      "shape": [
+        38,
+        38
+      ],
+      "rel_path": "Near-full/019.npy"
+    },
+    {
+      "id": "WM811K-Near-full-020",
+      "defect_type": "Near-full",
+      "lot_name": "lot44179",
+      "wafer_index": 4,
+      "shape": [
+        33,
+        29
+      ],
+      "rel_path": "Near-full/020.npy"
+    },
+    {
+      "id": "WM811K-Near-full-021",
+      "defect_type": "Near-full",
+      "lot_name": "lot15562",
+      "wafer_index": 22,
+      "shape": [
+        38,
+        38
+      ],
+      "rel_path": "Near-full/021.npy"
+    },
+    {
+      "id": "WM811K-Near-full-022",
+      "defect_type": "Near-full",
+      "lot_name": "lot15561",
+      "wafer_index": 24,
+      "shape": [
+        38,
+        38
+      ],
+      "rel_path": "Near-full/022.npy"
+    },
+    {
+      "id": "WM811K-Near-full-023",
+      "defect_type": "Near-full",
+      "lot_name": "lot43540",
+      "wafer_index": 23,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "Near-full/023.npy"
+    },
+    {
+      "id": "WM811K-Near-full-024",
+      "defect_type": "Near-full",
+      "lot_name": "lot45568",
+      "wafer_index": 20,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "Near-full/024.npy"
+    },
+    {
+      "id": "WM811K-Near-full-025",
+      "defect_type": "Near-full",
+      "lot_name": "lot46498",
+      "wafer_index": 18,
+      "shape": [
+        33,
+        37
+      ],
+      "rel_path": "Near-full/025.npy"
+    },
+    {
+      "id": "WM811K-Near-full-026",
+      "defect_type": "Near-full",
+      "lot_name": "lot44190",
+      "wafer_index": 15,
+      "shape": [
+        33,
+        29
+      ],
+      "rel_path": "Near-full/026.npy"
+    },
+    {
+      "id": "WM811K-Near-full-027",
+      "defect_type": "Near-full",
+      "lot_name": "lot44859",
+      "wafer_index": 7,
+      "shape": [
+        27,
+        25
+      ],
+      "rel_path": "Near-full/027.npy"
+    },
+    {
+      "id": "WM811K-Near-full-028",
+      "defect_type": "Near-full",
+      "lot_name": "lot15567",
+      "wafer_index": 16,
+      "shape": [
+        43,
+        42
+      ],
+      "rel_path": "Near-full/028.npy"
+    },
+    {
+      "id": "WM811K-Near-full-029",
+      "defect_type": "Near-full",
+      "lot_name": "lot45243",
+      "wafer_index": 17,
+      "shape": [
+        27,
+        25
+      ],
+      "rel_path": "Near-full/029.npy"
+    },
+    {
+      "id": "WM811K-None-000",
+      "defect_type": "None",
+      "lot_name": "lot46228",
+      "wafer_index": 11,
+      "shape": [
+        42,
+        44
+      ],
+      "rel_path": "None/000.npy"
+    },
+    {
+      "id": "WM811K-None-001",
+      "defect_type": "None",
+      "lot_name": "lot46435",
+      "wafer_index": 5,
+      "shape": [
+        42,
+        44
+      ],
+      "rel_path": "None/001.npy"
+    },
+    {
+      "id": "WM811K-None-002",
+      "defect_type": "None",
+      "lot_name": "lot45230",
+      "wafer_index": 16,
+      "shape": [
+        27,
+        25
+      ],
+      "rel_path": "None/002.npy"
+    },
+    {
+      "id": "WM811K-None-003",
+      "defect_type": "None",
+      "lot_name": "lot46153",
+      "wafer_index": 8,
+      "shape": [
+        47,
+        32
+      ],
+      "rel_path": "None/003.npy"
+    },
+    {
+      "id": "WM811K-None-004",
+      "defect_type": "None",
+      "lot_name": "lot47097",
+      "wafer_index": 17,
+      "shape": [
+        29,
+        26
+      ],
+      "rel_path": "None/004.npy"
+    },
+    {
+      "id": "WM811K-None-005",
+      "defect_type": "None",
+      "lot_name": "lot42706",
+      "wafer_index": 15,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "None/005.npy"
+    },
+    {
+      "id": "WM811K-None-006",
+      "defect_type": "None",
+      "lot_name": "lot42694",
+      "wafer_index": 10,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "None/006.npy"
+    },
+    {
+      "id": "WM811K-None-007",
+      "defect_type": "None",
+      "lot_name": "lot45122",
+      "wafer_index": 4,
+      "shape": [
+        27,
+        25
+      ],
+      "rel_path": "None/007.npy"
+    },
+    {
+      "id": "WM811K-None-008",
+      "defect_type": "None",
+      "lot_name": "lot47055",
+      "wafer_index": 24,
+      "shape": [
+        29,
+        26
+      ],
+      "rel_path": "None/008.npy"
+    },
+    {
+      "id": "WM811K-None-009",
+      "defect_type": "None",
+      "lot_name": "lot42444",
+      "wafer_index": 11,
+      "shape": [
+        41,
+        38
+      ],
+      "rel_path": "None/009.npy"
+    },
+    {
+      "id": "WM811K-None-010",
+      "defect_type": "None",
+      "lot_name": "lot46677",
+      "wafer_index": 14,
+      "shape": [
+        51,
+        30
+      ],
+      "rel_path": "None/010.npy"
+    },
+    {
+      "id": "WM811K-None-011",
+      "defect_type": "None",
+      "lot_name": "lot46546",
+      "wafer_index": 13,
+      "shape": [
+        33,
+        37
+      ],
+      "rel_path": "None/011.npy"
+    },
+    {
+      "id": "WM811K-None-012",
+      "defect_type": "None",
+      "lot_name": "lot43614",
+      "wafer_index": 3,
+      "shape": [
+        41,
+        41
+      ],
+      "rel_path": "None/012.npy"
+    },
+    {
+      "id": "WM811K-None-013",
+      "defect_type": "None",
+      "lot_name": "lot43527",
+      "wafer_index": 15,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "None/013.npy"
+    },
+    {
+      "id": "WM811K-None-014",
+      "defect_type": "None",
+      "lot_name": "lot43652",
+      "wafer_index": 17,
+      "shape": [
+        45,
+        42
+      ],
+      "rel_path": "None/014.npy"
+    },
+    {
+      "id": "WM811K-None-015",
+      "defect_type": "None",
+      "lot_name": "lot43006",
+      "wafer_index": 16,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "None/015.npy"
+    },
+    {
+      "id": "WM811K-None-016",
+      "defect_type": "None",
+      "lot_name": "lot43875",
+      "wafer_index": 20,
+      "shape": [
+        34,
+        31
+      ],
+      "rel_path": "None/016.npy"
+    },
+    {
+      "id": "WM811K-None-017",
+      "defect_type": "None",
+      "lot_name": "lot44945",
+      "wafer_index": 25,
+      "shape": [
+        27,
+        25
+      ],
+      "rel_path": "None/017.npy"
+    },
+    {
+      "id": "WM811K-None-018",
+      "defect_type": "None",
+      "lot_name": "lot45935",
+      "wafer_index": 19,
+      "shape": [
+        44,
+        41
+      ],
+      "rel_path": "None/018.npy"
+    },
+    {
+      "id": "WM811K-None-019",
+      "defect_type": "None",
+      "lot_name": "lot46016",
+      "wafer_index": 15,
+      "shape": [
+        41,
+        45
+      ],
+      "rel_path": "None/019.npy"
+    },
+    {
+      "id": "WM811K-None-020",
+      "defect_type": "None",
+      "lot_name": "lot44310",
+      "wafer_index": 8,
+      "shape": [
+        33,
+        29
+      ],
+      "rel_path": "None/020.npy"
+    },
+    {
+      "id": "WM811K-None-021",
+      "defect_type": "None",
+      "lot_name": "lot44927",
+      "wafer_index": 25,
+      "shape": [
+        27,
+        25
+      ],
+      "rel_path": "None/021.npy"
+    },
+    {
+      "id": "WM811K-None-022",
+      "defect_type": "None",
+      "lot_name": "lot125",
+      "wafer_index": 12,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "None/022.npy"
+    },
+    {
+      "id": "WM811K-None-023",
+      "defect_type": "None",
+      "lot_name": "lot40691",
+      "wafer_index": 17,
+      "shape": [
+        34,
+        31
+      ],
+      "rel_path": "None/023.npy"
+    },
+    {
+      "id": "WM811K-None-024",
+      "defect_type": "None",
+      "lot_name": "lot45306",
+      "wafer_index": 6,
+      "shape": [
+        39,
+        37
+      ],
+      "rel_path": "None/024.npy"
+    },
+    {
+      "id": "WM811K-None-025",
+      "defect_type": "None",
+      "lot_name": "lot42323",
+      "wafer_index": 10,
+      "shape": [
+        35,
+        31
+      ],
+      "rel_path": "None/025.npy"
+    },
+    {
+      "id": "WM811K-None-026",
+      "defect_type": "None",
+      "lot_name": "lot43847",
+      "wafer_index": 22,
+      "shape": [
+        41,
+        40
+      ],
+      "rel_path": "None/026.npy"
+    },
+    {
+      "id": "WM811K-None-027",
+      "defect_type": "None",
+      "lot_name": "lot40593",
+      "wafer_index": 3,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "None/027.npy"
+    },
+    {
+      "id": "WM811K-None-028",
+      "defect_type": "None",
+      "lot_name": "lot43276",
+      "wafer_index": 25,
+      "shape": [
+        25,
+        27
+      ],
+      "rel_path": "None/028.npy"
+    },
+    {
+      "id": "WM811K-None-029",
+      "defect_type": "None",
+      "lot_name": "lot40632",
+      "wafer_index": 16,
+      "shape": [
+        26,
+        26
+      ],
+      "rel_path": "None/029.npy"
+    }
+  ]
+}
