@@ -10,3 +10,4 @@ frontend/.vite/
 .env.local
 .DS_Store
 LSWMD.pkl
+.claude/

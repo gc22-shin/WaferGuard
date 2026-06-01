@@ -135,7 +135,7 @@ def build_action_card(
             "action": first_case.get("action", "Human-in-the-loop 검토 큐로 이동"),
         },
         "human_review_rule": review_rule,
-        "source_boundary": "synthetic wafer + local fixture 기반 판단 보조 카드입니다. 실제 fab root cause를 확정하지 않습니다.",
+        "source_boundary": "WM-811K wafer map + local fixture 기반 판단 보조 카드입니다. 실제 fab root cause를 확정하지 않습니다.",
         "threshold_basis": "demo SPC-style threshold입니다. 실제 fab spec/control limit가 아니며 구조 검증용 기준입니다.",
     }
 

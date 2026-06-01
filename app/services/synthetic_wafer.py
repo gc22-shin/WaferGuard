@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import math
 import random
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageFilter
 
 from app.services import real_wafer
 from app.services.schemas import DefectType
@@ -39,20 +38,19 @@ def generate_images(
     output_dir: Path,
     seed: int | None = None,
 ) -> dict[str, object]:
-    rng = np.random.default_rng(seed or random.randint(1, 999_999))
-
     sample = real_wafer.sample_wafer(defect_type)
-    source_meta: dict[str, object] | None = None
-    if sample is not None:
-        wafer, defect_mask = _render_real_wafer(sample["wafer_map"])
-        source_meta = {
-            "source": "wm811k",
-            "wm811k_id": sample["id"],
-            "lot_name": sample["lot_name"],
-            "wafer_index": sample["wafer_index"],
-        }
-    else:
-        wafer, defect_mask = _create_wafer(defect_type, rng)
+    if sample is None:
+        raise RuntimeError(
+            f"No WM-811K wafer available for defect_type={defect_type!r}. "
+            "Run `python scripts/build_wm811k_subset.py` to populate app/data/wm811k/."
+        )
+    wafer, defect_mask = _render_real_wafer(sample["wafer_map"])
+    source_meta: dict[str, object] = {
+        "source": "wm811k",
+        "wm811k_id": sample["id"],
+        "lot_name": sample["lot_name"],
+        "wafer_index": sample["wafer_index"],
+    }
 
     heatmap = _create_heatmap(defect_mask)
     overlay = _create_overlay(wafer, heatmap)
@@ -69,17 +67,15 @@ def generate_images(
     roi.save(roi_path)
 
     hotspot_ratio = float(defect_mask.mean())
-    result: dict[str, object] = {
+    return {
         "image_path": image_path,
         "heatmap_path": heatmap_path,
         "overlay_path": overlay_path,
         "roi_path": roi_path,
         "roi_bbox": roi_bbox,
         "hotspot_ratio": round(hotspot_ratio, 4),
+        "wafer_source": source_meta,
     }
-    if source_meta is not None:
-        result["wafer_source"] = source_meta
-    return result
 
 
 def _render_real_wafer(wafer_map: np.ndarray) -> tuple[Image.Image, np.ndarray]:
@@ -116,94 +112,6 @@ def _render_real_wafer(wafer_map: np.ndarray) -> tuple[Image.Image, np.ndarray]:
 
     image = Image.fromarray(canvas, mode="RGB")
     return image, mask
-
-
-def _create_wafer(defect_type: str, rng: np.random.Generator) -> tuple[Image.Image, np.ndarray]:
-    size = 224
-    center = size // 2
-    radius = 99
-
-    yy, xx = np.mgrid[:size, :size]
-    dist = np.sqrt((xx - center) ** 2 + (yy - center) ** 2)
-    wafer_mask = dist <= radius
-    base = np.full((size, size), 22, dtype=np.uint8)
-    wafer = np.full((size, size), 178, dtype=np.float32)
-    wafer += rng.normal(0, 7, (size, size))
-    wafer[~wafer_mask] = base[~wafer_mask]
-
-    defect_mask = np.zeros((size, size), dtype=bool)
-
-    if defect_type == "Center":
-        defect_mask = dist < 30
-    elif defect_type == "Donut":
-        defect_mask = (dist > 33) & (dist < 55)
-    elif defect_type == "Edge-Loc":
-        defect_mask = (dist > 76) & (dist < 99) & (xx > center + 12) & (yy < center + 50)
-    elif defect_type == "Edge-Ring":
-        defect_mask = (dist > 78) & (dist < 99)
-    elif defect_type == "Loc":
-        cx, cy = center - 35, center + 20
-        defect_mask = ((xx - cx) ** 2 / 24**2 + (yy - cy) ** 2 / 15**2) < 1
-    elif defect_type == "Random":
-        points = rng.choice(np.flatnonzero(wafer_mask), size=950, replace=False)
-        defect_mask.flat[points] = True
-        defect_mask = _dilate(defect_mask, rounds=1)
-    elif defect_type == "Scratch":
-        defect_mask = _scratch_mask(size, center, rng) & wafer_mask
-        defect_mask = _dilate(defect_mask, rounds=2)
-    elif defect_type == "Near-full":
-        defect_mask = (dist < 91) & (rng.random((size, size)) > 0.28)
-    elif defect_type == "None":
-        defect_mask = np.zeros((size, size), dtype=bool)
-
-    wafer[defect_mask] = rng.normal(62, 9, defect_mask.sum())
-    wafer = np.clip(wafer, 0, 255).astype(np.uint8)
-
-    rgb = np.zeros((size, size, 3), dtype=np.uint8)
-    rgb[..., 0] = wafer
-    rgb[..., 1] = wafer
-    rgb[..., 2] = wafer
-    rgb[~wafer_mask] = np.array([12, 18, 24], dtype=np.uint8)
-    outline = Image.fromarray(rgb, mode="RGB")
-    draw = ImageDraw.Draw(outline)
-    draw.ellipse(
-        (center - radius, center - radius, center + radius, center + radius),
-        outline=(88, 110, 126),
-        width=2,
-    )
-    return outline.filter(ImageFilter.SMOOTH), defect_mask
-
-
-def _scratch_mask(size: int, center: int, rng: np.random.Generator) -> np.ndarray:
-    mask = np.zeros((size, size), dtype=bool)
-    angle = rng.uniform(-0.55, 0.55)
-    length = rng.integers(120, 175)
-    x0 = center - int(math.cos(angle) * length / 2)
-    y0 = center - int(math.sin(angle) * length / 2) + rng.integers(-35, 35)
-    x1 = center + int(math.cos(angle) * length / 2)
-    y1 = center + int(math.sin(angle) * length / 2) + rng.integers(-35, 35)
-    image = Image.new("L", (size, size), 0)
-    draw = ImageDraw.Draw(image)
-    draw.line((x0, y0, x1, y1), fill=255, width=int(rng.integers(3, 6)))
-    return np.asarray(image) > 0
-
-
-def _dilate(mask: np.ndarray, rounds: int) -> np.ndarray:
-    current = mask.copy()
-    for _ in range(rounds):
-        padded = np.pad(current, 1, mode="constant")
-        current = (
-            padded[1:-1, 1:-1]
-            | padded[:-2, 1:-1]
-            | padded[2:, 1:-1]
-            | padded[1:-1, :-2]
-            | padded[1:-1, 2:]
-            | padded[:-2, :-2]
-            | padded[:-2, 2:]
-            | padded[2:, :-2]
-            | padded[2:, 2:]
-        )
-    return current
 
 
 def _create_heatmap(mask: np.ndarray) -> Image.Image:

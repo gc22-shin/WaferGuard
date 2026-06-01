@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Icon, RiskBadge, RiskGauge, Panel, Metric, StatusDot } from "./lib";
 import { WaferMap, GradCAM, ROIPatch, buildWaferMap } from "./wafer";
 import { DefectCatBars, RiskHistogram } from "./charts";
@@ -193,6 +193,22 @@ export default function InspectionView() {
   const [showForm, setShowForm] = useState(false);
   const [busy, setBusy]         = useState(false);
   const [error, setError]       = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/inspections?limit=1`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const latest = Array.isArray(data) ? data[0] : data?.inspections?.[0];
+        if (!cancelled && latest) setInsp(mapResult(latest));
+      } catch {
+        // keep defaultInspection on failure
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   async function runInspect() {
     setBusy(true);

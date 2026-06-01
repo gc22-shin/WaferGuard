@@ -40,7 +40,7 @@ def main() -> None:
     assert payload["overlay_url"].endswith("_overlay.png")
     assert payload["roi_url"].endswith("_roi.png")
     assert payload["image_source"] == "public_proxy"
-    assert "synthetic wafer fallback" in payload["proxy_status"]
+    assert payload["proxy_status"].startswith("WM-811K wafer map")
     assert payload["action_card"]["defect_type"] == "Scratch"
     assert payload["process_context"]["process_step"] == "Etch"
     assert payload["metrology"]["cd_nm"] == 31.8

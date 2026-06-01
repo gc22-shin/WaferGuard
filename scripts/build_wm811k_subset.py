@@ -29,7 +29,7 @@ LABEL_MAP = {
     "Near-full": "Near-full",
     "none": "None",
 }
-SAMPLES_PER_CLASS = 30
+SAMPLES_PER_CLASS = 200
 
 
 def _install_pickle_shim() -> None:

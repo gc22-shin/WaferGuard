@@ -118,9 +118,8 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
         "image_source": request.image_source,
         "proxy_dataset": request.proxy_dataset,
         "proxy_status": (
-            "local proxy image folder not configured; synthetic wafer fallback"
-            if request.image_source == "public_proxy"
-            else "synthetic wafer generator"
+            f"WM-811K wafer map ({image_result['wafer_source']['wm811k_id']}, "
+            f"lot={image_result['wafer_source']['lot_name']})"
         ),
         "defect_type": defect_type,
         "confidence": confidence,
