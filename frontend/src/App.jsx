@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Icon, RiskBadge, StatusDot } from "./lib";
 import { criticalAlertData } from "./mock";
 
@@ -9,6 +9,8 @@ import HandoffView     from "./HandoffView";
 import CopilotView     from "./CopilotView";
 import AutomationView  from "./AutomationView";
 import AlertCenterView from "./AlertCenterView";
+import SettingsView    from "./SettingsView";
+import { SettingsProvider, useStream } from "./SettingsContext";
 
 const NAV = [
   { id: "inspect", icon: "layers",  label: "검사 & Action Card", en: "Inspection",  View: InspectionView },
@@ -18,6 +20,7 @@ const NAV = [
   { id: "copilot", icon: "bot",     label: "Fab Ops Copilot",    en: "Copilot",      View: CopilotView },
   { id: "auto",    icon: "cpu",     label: "자동화 모니터",         en: "Automation",   View: AutomationView },
   { id: "alert",   icon: "radio",   label: "Alert Center",       en: "Alerts",       View: AlertCenterView, badge: 1 },
+  { id: "settings",icon: "cpu",     label: "설정",                en: "Settings",     View: SettingsView },
 ];
 
 function Clock() {
@@ -123,25 +126,46 @@ function Sidebar({ active, setActive }) {
   );
 }
 
-export default function App() {
+function AppInner() {
   const [theme, setTheme]   = useState("dark");
   const [active, setActive] = useState("inspect");
   const [alert, setAlert]   = useState(false);
+  const [alertData, setAlertData] = useState(criticalAlertData);
+  const { latest, tick } = useStream();
+  const lastAlertTick = useRef(0);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
+  // auto-trigger critical alert when the stream emits a new High-risk inspection
+  useEffect(() => {
+    if (!latest || tick === lastAlertTick.current) return;
+    if (latest.risk_level === "High") {
+      lastAlertTick.current = tick;
+      setAlertData({
+        riskScore: Math.round((latest.risk_score ?? 0) * 100),
+        lot: latest.lot_id || "LOT-?",
+        wafer: latest.wafer_id || "W?",
+        title: `High 리스크 — ${latest.defect_type || "결함"} 감지`,
+        tool: `${latest.equipment_id || "?"} / ${latest.process_step || "?"}`,
+        cause: latest.defect_type || "분류 불명",
+        affectedDie: Math.round((latest.hotspot_ratio || 0) * 612),
+      });
+      setAlert(true);
+    }
+  }, [tick, latest]);
+
   const cur = NAV.find(n => n.id === active);
   const View = cur.View;
 
-  function simulate() { setActive("alert"); setAlert(true); }
+  function simulate() { setActive("alert"); setAlert(true); setAlertData(criticalAlertData); }
 
   return (
     <div style={{ minHeight: "100vh" }}>
       {alert && (
         <CriticalAlert
-          data={criticalAlertData}
+          data={alertData}
           onView={() => { setActive("inspect"); setAlert(false); }}
           onClose={() => setAlert(false)}
         />
@@ -198,5 +222,13 @@ export default function App() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <SettingsProvider>
+      <AppInner />
+    </SettingsProvider>
   );
 }

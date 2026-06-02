@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Icon, RiskBadge, RiskGauge, Panel, Metric, StatusDot } from "./lib";
 import { WaferMap, GradCAM, ROIPatch, buildWaferMap } from "./wafer";
 import { DefectCatBars, RiskHistogram } from "./charts";
 import { riskHist, defectCats, defaultInspection } from "./mock";
+import { useStream } from "./SettingsContext";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
-const DEFECT_OPTIONS = ["auto","Center","Donut","Edge-Loc","Edge-Ring","Loc","Random","Scratch","Near-full","None"];
-const STEP_OPTIONS   = ["Lithography","Etch","Deposition","CMP","Cleaning","Inspection"];
 
 // Map backend result → display format
 function mapResult(r) {
@@ -181,64 +180,19 @@ function MetrologyTable({ rows }) {
 }
 
 export default function InspectionView() {
-  const [insp, setInsp]       = useState(defaultInspection);
+  const { latest, tick, settings, updateSettings, inFlight, runOnce } = useStream();
+  const [insp, setInsp]         = useState(defaultInspection);
   const [scanning, setScanning] = useState(false);
-  const [form, setForm]       = useState({
-    lot_id: "LOT-DEMO-042", wafer_id: "WF-DEMO-001", line_id: "LINE-7",
-    equipment_id: "ETCH-02", process_step: "Etch", recipe_id: "RCP-ETCH-EDGE-02",
-    defect_hint: "auto",
-    cd_nm: 32.5, overlay_nm: 4.2, film_thickness_nm: 88.0, roughness_nm: 1.2,
-    defect_count: "", yield_proxy: 0.982,
-  });
-  const [showForm, setShowForm] = useState(false);
-  const [busy, setBusy]         = useState(false);
-  const [error, setError]       = useState("");
+  const scanTimer = useRef(null);
 
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/v1/inspections?limit=1`);
-        if (!res.ok) return;
-        const data = await res.json();
-        const latest = Array.isArray(data) ? data[0] : data?.inspections?.[0];
-        if (!cancelled && latest) setInsp(mapResult(latest));
-      } catch {
-        // keep defaultInspection on failure
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  async function runInspect() {
-    setBusy(true);
-    setError("");
+    if (!latest) return;
+    setInsp(mapResult(latest));
     setScanning(true);
-    try {
-      const payload = {
-        ...form,
-        cd_nm: Number(form.cd_nm), overlay_nm: Number(form.overlay_nm),
-        film_thickness_nm: Number(form.film_thickness_nm), roughness_nm: Number(form.roughness_nm),
-        defect_count: form.defect_count === "" ? null : Number(form.defect_count),
-        yield_proxy: Number(form.yield_proxy),
-        image_source: "synthetic_wafer", proxy_dataset: "mvtec-ad",
-      };
-      const res = await fetch(`${API_BASE}/api/v1/inspect`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setInsp(mapResult(data));
-      setShowForm(false);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-      setTimeout(() => setScanning(false), 400);
-    }
-  }
+    if (scanTimer.current) clearTimeout(scanTimer.current);
+    scanTimer.current = setTimeout(() => setScanning(false), 350);
+    return () => { if (scanTimer.current) clearTimeout(scanTimer.current); };
+  }, [tick, latest]);
 
   const hot = insp.riskLevel === "High" ? "cluster" : "edge";
   const imageBase = `${API_BASE}`;
@@ -260,66 +214,21 @@ export default function InspectionView() {
             <div className="label-cap" style={{ fontSize: 9 }}>검사 시각</div>
             <div className="mono" style={{ fontSize: 11.5, color: "var(--text-2)" }}>{insp.startedAt?.slice(0,19)}</div>
           </div>
-          <button className="btn" onClick={() => setShowForm(v => !v)} style={{ gap: 6 }}>
-            <Icon name="layers" size={14} />설정
+          <span className="chip" title={`주기 ${settings.intervalMs}ms · 비정상률 ${(settings.anomalyRate*100).toFixed(0)}%`}
+            style={{ color: settings.enabled ? "var(--low)" : "var(--text-3)", borderColor: settings.enabled ? "var(--low)" : "var(--border-strong)" }}>
+            <StatusDot kind={settings.enabled ? "ok" : "idle"} />
+            {settings.enabled ? `스트림 ${(settings.intervalMs/1000).toFixed(1)}s` : "스트림 일시정지"}
+          </span>
+          <button className="btn" onClick={() => updateSettings({ enabled: !settings.enabled })} style={{ gap: 6 }}>
+            <Icon name={settings.enabled ? "pause" : "play"} size={14} />
+            {settings.enabled ? "일시정지" : "재개"}
           </button>
-          <button className="btn btn-accent" onClick={runInspect} disabled={busy}>
-            <Icon name="refresh" size={14} style={busy ? { animation: "spin 1s linear infinite" } : undefined} />
-            {busy ? "검사 중…" : "재검사 실행"}
+          <button className="btn btn-accent" onClick={runOnce} disabled={inFlight}>
+            <Icon name="refresh" size={14} style={inFlight ? { animation: "spin 1s linear infinite" } : undefined} />
+            {inFlight ? "검사 중…" : "1회 실행"}
           </button>
         </div>
       </div>
-
-      {/* inspection form (collapsible) */}
-      {showForm && (
-        <div className="panel slide-in" style={{ padding: 14 }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 12, marginBottom: 12 }}>
-            {[
-              ["Wafer ID", "wafer_id", "text"],
-              ["Lot ID", "lot_id", "text"],
-              ["Line", "line_id", "text"],
-              ["Equipment", "equipment_id", "text"],
-              ["Recipe", "recipe_id", "text"],
-            ].map(([label, key, type]) => (
-              <label key={key} style={{ display: "grid", gap: 4 }}>
-                <span className="label-cap">{label}</span>
-                <input type={type} value={form[key]}
-                  onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                  style={{ background: "var(--panel-2)", border: "1px solid var(--border-strong)", borderRadius: 6, padding: "6px 9px", color: "var(--text)", font: "inherit", fontSize: 12 }} />
-              </label>
-            ))}
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="label-cap">Step</span>
-              <select value={form.process_step} onChange={e => setForm(f => ({ ...f, process_step: e.target.value }))}
-                style={{ background: "var(--panel-2)", border: "1px solid var(--border-strong)", borderRadius: 6, padding: "6px 9px", color: "var(--text)", font: "inherit", fontSize: 12 }}>
-                {STEP_OPTIONS.map(o => <option key={o}>{o}</option>)}
-              </select>
-            </label>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="label-cap">Defect Hint</span>
-              <select value={form.defect_hint} onChange={e => setForm(f => ({ ...f, defect_hint: e.target.value }))}
-                style={{ background: "var(--panel-2)", border: "1px solid var(--border-strong)", borderRadius: 6, padding: "6px 9px", color: "var(--text)", font: "inherit", fontSize: 12 }}>
-                {DEFECT_OPTIONS.map(o => <option key={o}>{o}</option>)}
-              </select>
-            </label>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 12 }}>
-            {[
-              ["CD (nm)", "cd_nm"], ["Overlay (nm)", "overlay_nm"],
-              ["Thickness (nm)", "film_thickness_nm"], ["Roughness (nm)", "roughness_nm"],
-              ["Yield Proxy", "yield_proxy"],
-            ].map(([label, key]) => (
-              <label key={key} style={{ display: "grid", gap: 4 }}>
-                <span className="label-cap">{label}</span>
-                <input type="number" value={form[key]} step="0.1"
-                  onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                  style={{ background: "var(--panel-2)", border: "1px solid var(--border-strong)", borderRadius: 6, padding: "6px 9px", color: "var(--text)", font: "inherit", fontSize: 12 }} />
-              </label>
-            ))}
-          </div>
-          {error && <div style={{ marginTop: 10, padding: "8px 11px", background: "var(--high-dim)", border: "1px solid var(--high)", borderRadius: 6, color: "var(--high)", fontSize: 12 }}>{error}</div>}
-        </div>
-      )}
 
       {/* main grid */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 372px", gap: 12, alignItems: "start" }}>

@@ -3,6 +3,7 @@ import React, { useLayoutEffect, useRef, useState } from "react";
 // ── Icon ─────────────────────────────────────────────────────────────────────
 const PATHS = {
   play:    "M5 4l13 8-13 8V4z",
+  pause:   "M7 4h3v16H7z M14 4h3v16h-3z",
   flag:    "M5 3v18 M5 4h12l-2.5 4L17 12H5",
   note:    "M5 3h10l4 4v14H5z M15 3v4h4 M8 11h8 M8 15h8 M8 19h5",
   check:   "M4 12l5 5L20 6",
@@ -75,7 +76,7 @@ export function StatusDot({ kind }) {
     archived: "var(--text-3)", success: "var(--low)", running: "var(--accent)",
     failed: "var(--high)", escalated: "var(--med)", ok: "var(--low)", watch: "var(--med)",
     active: "var(--low)", warn: "var(--med)", info: "var(--accent)",
-    resolved: "var(--low)", monitored: "var(--accent)",
+    resolved: "var(--low)", monitored: "var(--accent)", idle: "var(--text-3)",
   };
   const c = map[kind] || "var(--text-3)";
   return (
