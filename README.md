@@ -1,4 +1,4 @@
-# WaferGuard Agent Simulation
+# WaferGuard Agent Simulation.
 
 WaferGuard는 이미지 분류 정확도 개선 프로젝트가 아니라, 반도체 공정 이상 상황을 시뮬레이션하고 Agent가 근거를 모아 대응 action을 제안/수행하는 로컬 MVP다.
 
