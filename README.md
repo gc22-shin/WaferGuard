@@ -62,27 +62,100 @@ WaferGuard는 이미지 분류 정확도 개선 프로젝트가 아니라, 반�
 - `POST /api/v1/handoff/{id}/send`: Daily Report 전달 완료 기록
 - `GET /api/v1/copilot/ops`: 운영 Copilot 요약 조회
 
-## 실행
+## 사전 요구사항
 
-PowerShell에서 아래 명령을 실행한다.
+| 도구 | 최소 버전 | 확인 명령 |
+|------|-----------|-----------|
+| Python | 3.10 이상 | `python --version` |
+| Node.js | 18 이상 | `node --version` |
+| npm | 9 이상 | `npm --version` |
+| Git | 임의 | `git --version` |
+
+## 설치 및 실행
+
+### Windows (PowerShell) — 권장
+
+저장소를 클론하고 PowerShell에서 실행 스크립트를 실행한다. venv 생성, 패키지 설치, 프론트엔드 빌드, 백엔드·프론트엔드 동시 기동을 자동으로 처리한다.
 
 ```powershell
+git clone https://github.com/arnold6444/WaferGuard.git
+cd WaferGuard
 .\start.ps1
 ```
 
-실행 후 접속 주소:
+실행 후 출력되는 주소로 접속한다.
 
-- Dashboard: `start.ps1`이 출력하는 주소
-- API docs: `start.ps1`이 출력하는 주소 + `/docs`
-- Health: API 주소 + `/health`
-- 주소 파일: `outputs/runtime-url.txt`
+```
+Dashboard: http://127.0.0.1:5173
+API docs : http://127.0.0.1:8000/docs
+```
 
-기본값은 Dashboard `http://127.0.0.1:5173`, API `http://127.0.0.1:8000`이다. 이미 사용 중인 포트가 있으면 자동으로 다음 포트를 사용한다.
+포트가 이미 사용 중이면 자동으로 다음 포트(5174, 8001…)를 사용한다. 실제 주소는 `outputs/runtime-url.txt`에 저장된다.
+
+종료는 PowerShell 창에서 `Ctrl+C`.
+
+---
+
+### macOS / Linux — 수동 실행
+
+터미널 2개를 열어 백엔드와 프론트엔드를 각각 실행한다.
+
+**터미널 1 — 백엔드**
+
+```bash
+git clone https://github.com/arnold6444/WaferGuard.git
+cd WaferGuard
+
+python3 -m venv .venv
+source .venv/bin/activate          # Windows(PowerShell): .venv\Scripts\Activate.ps1
+
+pip install -r requirements.txt
+
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+백엔드가 뜨면 `http://127.0.0.1:8000/health` 에서 `{"status":"ok"}` 를 확인할 수 있다.
+
+**터미널 2 — 프론트엔드**
+
+```bash
+cd WaferGuard/frontend
+
+npm install
+VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+```
+
+브라우저에서 `http://127.0.0.1:5173` 으로 접속한다.
+
+---
+
+### 처음 실행 시 생성되는 디렉터리
+
+```
+outputs/
+  images/          # 생성된 wafer map, Grad-CAM, ROI 이미지
+  waferguard.db    # SQLite 검사 이력
+  runtime-url.txt  # 실행 중인 주소 목록
+```
+
+`outputs/` 는 `.gitignore`에 포함되어 있으며 앱 기동 시 자동 생성된다.
 
 ## 검증
 
-```powershell
+백엔드가 실행 중인 상태에서 아래 명령으로 주요 엔드포인트를 한 번에 테스트할 수 있다.
+
+```bash
+# macOS/Linux
+source .venv/bin/activate
+python scripts/smoke_test.py
+
+# Windows
 .\.venv\Scripts\python.exe scripts\smoke_test.py
+```
+
+프론트엔드 빌드 검증:
+
+```bash
 cd frontend
 npm run build
 ```
