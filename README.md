@@ -66,66 +66,76 @@ WaferGuard는 이미지 분류 정확도 개선 프로젝트가 아니라, 반�
 
 | 도구 | 최소 버전 | 확인 명령 |
 |------|-----------|-----------|
-| Python | 3.10 이상 | `python --version` |
+| Conda | 임의 | `conda --version` |
 | Node.js | 18 이상 | `node --version` |
 | npm | 9 이상 | `npm --version` |
 | Git | 임의 | `git --version` |
 
-## 설치 및 실행
+## 환경 구축
 
-### Windows (PowerShell) — 권장
+### 저장소 클론
 
-저장소를 클론하고 PowerShell에서 실행 스크립트를 실행한다. venv 생성, 패키지 설치, 프론트엔드 빌드, 백엔드·프론트엔드 동시 기동을 자동으로 처리한다.
-
-```powershell
+```bash
 git clone https://github.com/arnold6444/WaferGuard.git
 cd WaferGuard
-.\start.ps1
 ```
 
-실행 후 출력되는 주소로 접속한다.
+### Python 환경 (Conda)
 
+```bash
+conda create -n waferguard python=3.11 -y
+conda activate waferguard
+pip install -r requirements.txt
 ```
-Dashboard: http://127.0.0.1:5173
-API docs : http://127.0.0.1:8000/docs
+
+### 프론트엔드 의존성
+
+```bash
+cd frontend
+npm install
+cd ..
 ```
-
-포트가 이미 사용 중이면 자동으로 다음 포트(5174, 8001…)를 사용한다. 실제 주소는 `outputs/runtime-url.txt`에 저장된다.
-
-종료는 PowerShell 창에서 `Ctrl+C`.
 
 ---
 
-### macOS / Linux — 수동 실행
+## 실행
 
 터미널 2개를 열어 백엔드와 프론트엔드를 각각 실행한다.
+
+### Windows (PowerShell) — 자동 실행
+
+venv 생성, 패키지 설치, 백엔드·프론트엔드 동시 기동을 자동으로 처리한다. 포트가 이미 사용 중이면 자동으로 다음 포트(5174, 8001…)를 사용하며 실제 주소는 `outputs/runtime-url.txt`에 저장된다.
+
+```powershell
+.\start.ps1
+```
+
+종료는 PowerShell 창에서 `Ctrl+C`.
+
+### macOS / Linux
 
 **터미널 1 — 백엔드**
 
 ```bash
-git clone https://github.com/arnold6444/WaferGuard.git
-cd WaferGuard
-
-python3 -m venv .venv
-source .venv/bin/activate          # Windows(PowerShell): .venv\Scripts\Activate.ps1
-
-pip install -r requirements.txt
-
+conda activate waferguard
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
-
-백엔드가 뜨면 `http://127.0.0.1:8000/health` 에서 `{"status":"ok"}` 를 확인할 수 있다.
 
 **터미널 2 — 프론트엔드**
 
 ```bash
-cd WaferGuard/frontend
-
-npm install
+cd frontend
 VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
 ```
 
-브라우저에서 `http://127.0.0.1:5173` 으로 접속한다.
+### 접속 주소
+
+```
+Dashboard : http://127.0.0.1:5173
+API docs  : http://127.0.0.1:8000/docs
+```
+
+백엔드 정상 기동 여부는 `http://127.0.0.1:8000/health` 에서 `{"status":"ok"}` 로 확인한다.
 
 ---
 
@@ -146,11 +156,12 @@ outputs/
 
 ```bash
 # macOS/Linux
-source .venv/bin/activate
+conda activate waferguard
 python scripts/smoke_test.py
 
 # Windows
-.\.venv\Scripts\python.exe scripts\smoke_test.py
+conda activate waferguard
+python scripts\smoke_test.py
 ```
 
 프론트엔드 빌드 검증:
