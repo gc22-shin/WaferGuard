@@ -26,6 +26,8 @@ from app.services.schemas import (
     RollbackRequest,
 )
 from app.services.storage import (
+    browse_table,
+    db_overview,
     get_inspection,
     init_db,
     insert_alert,
@@ -113,6 +115,21 @@ def wm811k_evaluation() -> dict[str, object]:
 @app.get("/api/v1/rag/evaluation")
 def rag_evaluation() -> dict[str, object]:
     return rag_evaluation_set()
+
+
+@app.get("/api/v1/db/overview")
+def database_overview() -> dict[str, object]:
+    """Tables, row counts, and columns of the workflow SQLite DB."""
+    return db_overview()
+
+
+@app.get("/api/v1/db/tables/{table_name}")
+def database_table(table_name: str, limit: int = 50, offset: int = 0) -> dict[str, object]:
+    """Paginated rows from one workflow table (read-only)."""
+    result = browse_table(table_name, limit=limit, offset=offset)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Unknown table")
+    return result
 
 
 @app.get("/api/v1/automation/status")

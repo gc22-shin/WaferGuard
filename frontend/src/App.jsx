@@ -3,24 +3,18 @@ import { Icon, RiskBadge, StatusDot } from "./lib";
 import { criticalAlertData } from "./mock";
 
 import InspectionView  from "./InspectionView";
-import RagView         from "./RagView";
 import MlopsView       from "./MlopsView";
-import HandoffView     from "./HandoffView";
-import CopilotView     from "./CopilotView";
-import AutomationView  from "./AutomationView";
+import DatabaseView    from "./DatabaseView";
 import AlertCenterView from "./AlertCenterView";
 import SettingsView    from "./SettingsView";
 import { SettingsProvider, useStream } from "./SettingsContext";
 
 const NAV = [
-  { id: "inspect", icon: "layers",  label: "검사 & Action Card", en: "Inspection",  View: InspectionView },
-  { id: "rag",     icon: "history", label: "RAG 증거",            en: "RAG Evidence", View: RagView },
-  { id: "mlops",   icon: "box",     label: "MLOps 콘솔",           en: "MLOps",        View: MlopsView },
-  { id: "handoff", icon: "handoff", label: "인수인계",             en: "Handoff",      View: HandoffView },
-  { id: "copilot", icon: "bot",     label: "Fab Ops Copilot",    en: "Copilot",      View: CopilotView },
-  { id: "auto",    icon: "cpu",     label: "자동화 모니터",         en: "Automation",   View: AutomationView },
-  { id: "alert",   icon: "radio",   label: "Alert Center",       en: "Alerts",       View: AlertCenterView, badge: 1 },
-  { id: "settings",icon: "cpu",     label: "설정",                en: "Settings",     View: SettingsView },
+  { id: "inspect", icon: "layers",  label: "실시간 검사",    en: "Live Inspection", View: InspectionView },
+  { id: "mlops",   icon: "box",     label: "MLOps 콘솔",    en: "MLOps",           View: MlopsView },
+  { id: "data",    icon: "history", label: "데이터 관리",    en: "Data & RAG",      View: DatabaseView },
+  { id: "alert",   icon: "radio",   label: "Alert Center", en: "Alerts",          View: AlertCenterView, badge: 1 },
+  { id: "settings",icon: "cpu",     label: "설정",          en: "Settings",        View: SettingsView },
 ];
 
 function Clock() {

@@ -138,6 +138,15 @@ def main() -> None:
     approvals = client.get("/api/v1/pending-approvals")
     assert approvals.status_code == 200, approvals.text
 
+    db_overview = client.get("/api/v1/db/overview")
+    assert db_overview.status_code == 200, db_overview.text
+    assert any(t["name"] == "inspections" for t in db_overview.json()["tables"])
+
+    db_rows = client.get("/api/v1/db/tables/inspections?limit=5")
+    assert db_rows.status_code == 200, db_rows.text
+    assert db_rows.json()["total"] >= 1
+    assert client.get("/api/v1/db/tables/not_a_table").status_code == 404
+
     print(
         {
             "health": health.json()["status"],
@@ -154,6 +163,7 @@ def main() -> None:
             "pending_approvals": len(approvals.json()),
             "copilot_actions": len(copilot.json()["action_recommendations"]),
             "models": len(state.json()["models"]),
+            "db_tables": len(db_overview.json()["tables"]),
         }
     )
 

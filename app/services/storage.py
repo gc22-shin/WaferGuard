@@ -670,3 +670,71 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) 
     existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
     if column not in existing:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+
+
+# ---------------------------------------------------------------------------
+# DB browser (read-only access for the Data tab)
+# ---------------------------------------------------------------------------
+
+BROWSABLE_TABLES: tuple[str, ...] = (
+    "inspections",
+    "model_registry",
+    "drift_events",
+    "retraining_jobs",
+    "alerts",
+    "handoff_reports",
+    "agent_traces",
+    "pending_approvals",
+    "rag_documents",
+)
+
+
+def db_overview() -> dict[str, object]:
+    with connect() as conn:
+        tables = []
+        for name in BROWSABLE_TABLES:
+            count = conn.execute(f"SELECT COUNT(*) AS count FROM {name}").fetchone()["count"]
+            columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({name})").fetchall()]
+            tables.append({"name": name, "row_count": count, "columns": columns})
+    db_file = Path(DB_PATH)
+    return {
+        "db_path": str(DB_PATH),
+        "db_size_bytes": db_file.stat().st_size if db_file.exists() else 0,
+        "tables": tables,
+    }
+
+
+def browse_table(name: str, limit: int = 50, offset: int = 0) -> dict[str, object] | None:
+    if name not in BROWSABLE_TABLES:
+        return None
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    with connect() as conn:
+        columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({name})").fetchall()]
+        total = conn.execute(f"SELECT COUNT(*) AS count FROM {name}").fetchone()["count"]
+        if "created_at" in columns:
+            order = "created_at DESC"
+        elif "registered_at" in columns:
+            order = "registered_at DESC"
+        else:
+            order = "rowid DESC"
+        rows = conn.execute(
+            f"SELECT * FROM {name} ORDER BY {order} LIMIT ? OFFSET ?", (limit, offset)
+        ).fetchall()
+    items: list[dict[str, object]] = []
+    for row in rows:
+        item: dict[str, object] = {}
+        for key in row.keys():
+            value = row[key]
+            if isinstance(value, bytes):
+                value = f"<blob {len(value)} bytes>"
+            item[key] = value
+        items.append(item)
+    return {
+        "table": name,
+        "columns": columns,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "rows": items,
+    }
