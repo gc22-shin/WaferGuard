@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import random
+import threading
 from datetime import datetime, timezone
 
 from app.services.config import IMAGE_DIR, MODEL_VERSION
@@ -22,6 +24,17 @@ from app.services.storage import insert_alert, insert_inspection, production_mod
 from app.services.synthetic_wafer import choose_defect, generate_images
 
 logger = logging.getLogger(__name__)
+
+
+def _run_agent_background(evidence: dict) -> None:
+    try:
+        from app.services.agent import run as agent_run  # noqa: PLC0415
+
+        agent_run(evidence)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "Background agent run failed for %s: %s", evidence.get("inspection_id"), exc
+        )
 
 
 def run_inspection(request: InspectRequest) -> dict[str, object]:
@@ -96,17 +109,32 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
             ],
             "use_llm": request.use_llm,
         }
-        try:
-            from app.services.agent import run as agent_run  # noqa: PLC0415
-            agent_result = agent_run(evidence)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Agent run failed for %s: %s", inspection_id, exc)
+        llm_active = request.use_llm and bool(os.environ.get("LUXIA_API_KEY", "").strip())
+        if llm_active:
+            # LLM analysis takes seconds — run it in the background so the
+            # inspect response (and the live stream) returns immediately.
+            # The agent persists its trace, which the Agent tab polls for.
+            threading.Thread(
+                target=_run_agent_background, args=(evidence,), daemon=True
+            ).start()
             agent_result = {
-                "final_action": f"Agent 실행 오류: {exc}",
+                "final_action": None,
                 "tool_calls": [],
                 "trace_id": None,
-                "agent_mode": "error",
+                "agent_mode": "pending",
             }
+        else:
+            try:
+                from app.services.agent import run as agent_run  # noqa: PLC0415
+                agent_result = agent_run(evidence)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Agent run failed for %s: %s", inspection_id, exc)
+                agent_result = {
+                    "final_action": f"Agent 실행 오류: {exc}",
+                    "tool_calls": [],
+                    "trace_id": None,
+                    "agent_mode": "error",
+                }
 
     record = {
         "id": inspection_id,

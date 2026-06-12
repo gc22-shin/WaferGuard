@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Icon, StatusDot } from "./lib";
+import React, { useEffect, useRef, useState } from "react";
+import { Icon, RiskBadge, StatusDot } from "./lib";
 
 import InspectionView  from "./InspectionView";
 import AgentView       from "./AgentView";
@@ -7,7 +7,7 @@ import MlopsView       from "./MlopsView";
 import DatabaseView    from "./DatabaseView";
 import AlertCenterView from "./AlertCenterView";
 import SettingsView    from "./SettingsView";
-import { SettingsProvider } from "./SettingsContext";
+import { SettingsProvider, useStream } from "./SettingsContext";
 
 const NAV = [
   { id: "inspect", icon: "layers",  label: "실시간 검사",    en: "Live Inspection", View: InspectionView },
@@ -39,6 +39,33 @@ function Logo() {
       <div style={{ lineHeight: 1 }}>
         <div style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: "-.02em", color: "var(--text)" }}>WaferGuard</div>
         <div className="mono" style={{ fontSize: 8.5, color: "var(--text-3)", letterSpacing: ".08em", marginTop: 1 }}>FAB QUALITY OPS</div>
+      </div>
+    </div>
+  );
+}
+
+function AgentToast({ data, onGo, onClose }) {
+  return (
+    <div className="toast-in" style={{ position: "fixed", bottom: 18, right: 18, zIndex: 200, width: 330 }}>
+      <div style={{
+        display: "flex", flexDirection: "column", gap: 9, padding: "12px 14px",
+        background: "var(--panel)", border: "1px solid var(--accent-line)", borderRadius: 10,
+        boxShadow: "var(--shadow)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Icon name="bot" size={15} style={{ color: "var(--accent)" }} />
+          <RiskBadge level={data.level} />
+          <span className="mono" style={{ fontSize: 11, color: "var(--text)", fontWeight: 600 }}>{data.wafer}</span>
+          <span style={{ fontSize: 11, color: "var(--text-2)" }}>{data.defect}</span>
+          <button className="btn btn-ghost" onClick={onClose} aria-label="닫기"
+            style={{ marginLeft: "auto", padding: "3px 6px" }}><Icon name="x" size={13} /></button>
+        </div>
+        <div style={{ fontSize: 11.5, color: "var(--text-2)", lineHeight: 1.5 }}>
+          AI 분석이 진행 중입니다. 에이전트 분석 탭에서 추정 원인과 권장 액션을 확인하세요.
+        </div>
+        <button className="btn btn-accent" onClick={onGo} style={{ alignSelf: "flex-start", padding: "5px 12px", fontSize: 11.5 }}>
+          <Icon name="bot" size={13} />분석 보러 가기
+        </button>
       </div>
     </div>
   );
@@ -88,16 +115,40 @@ function Sidebar({ active, setActive }) {
 function AppInner() {
   const [theme, setTheme]   = useState("dark");
   const [active, setActive] = useState("inspect");
+  const [toast, setToast]   = useState(null);
+  const [agentFocus, setAgentFocus] = useState(null);
+  const { latest, tick } = useStream();
+  const lastToastTick = useRef(0);
+  const toastTimer = useRef(null);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
+
+  // transient nudge toward the Agent tab when a Medium/High inspection lands
+  useEffect(() => {
+    if (!latest || tick === lastToastTick.current) return;
+    if ((latest.risk_level === "High" || latest.risk_level === "Medium") && active !== "agent") {
+      lastToastTick.current = tick;
+      setToast({ id: latest.id, level: latest.risk_level, wafer: latest.wafer_id || "W?", defect: latest.defect_type || "결함" });
+      clearTimeout(toastTimer.current);
+      toastTimer.current = setTimeout(() => setToast(null), 6000);
+    }
+  }, [tick, latest, active]);
 
   const cur = NAV.find(n => n.id === active);
   const View = cur.View;
 
   return (
     <div style={{ minHeight: "100vh" }}>
+      {toast && (
+        <AgentToast
+          data={toast}
+          onGo={() => { setAgentFocus(toast.id); setActive("agent"); setToast(null); }}
+          onClose={() => setToast(null)}
+        />
+      )}
+
       {/* top app bar */}
       <header style={{
         display: "flex", alignItems: "center", gap: 16, padding: "0 18px", height: 54,
@@ -138,7 +189,8 @@ function AppInner() {
           </div>
 
           <div key={active} className="fade-in">
-            <View />
+            <View focusId={cur.id === "agent" ? agentFocus : undefined}
+              onFocusHandled={cur.id === "agent" ? () => setAgentFocus(null) : undefined} />
           </div>
         </main>
       </div>

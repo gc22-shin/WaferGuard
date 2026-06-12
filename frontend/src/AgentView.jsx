@@ -8,6 +8,7 @@ const MODE_CHIP = {
   llm:       { color: "var(--accent)", label: "LLM (GPT-4o-mini)" },
   stub:      { color: "var(--med)",    label: "룰 기반 폴백" },
   rule_only: { color: "var(--text-3)", label: "Agent 미참여" },
+  pending:   { color: "var(--med)",    label: "AI 분석 중…" },
   error:     { color: "var(--high)",   label: "Agent 오류" },
 };
 
@@ -245,12 +246,13 @@ function DefectChat({ inspectionId, llmOn }) {
 
 /* ---------- main view ---------- */
 
-export default function AgentView() {
+export default function AgentView({ focusId, onFocusHandled }) {
   const { tick, settings } = useStream();
   const [rows, setRows] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
   const [listOpen, setListOpen] = useState(true);
   const [trace, setTrace] = useState(null);
+  const [traceLoading, setTraceLoading] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // picking a case collapses the left list; the collapsed bar re-expands it
@@ -273,16 +275,39 @@ export default function AgentView() {
 
   useEffect(() => { load(); }, [load, tick]);
 
+  // toast "분석 보러 가기" hands us the case to open directly
+  useEffect(() => {
+    if (!focusId) return;
+    if (rows.some(r => r.id === focusId)) {
+      setSelectedId(focusId);
+      setListOpen(false);
+      onFocusHandled && onFocusHandled();
+    }
+  }, [focusId, rows, onFocusHandled]);
+
+  // the agent runs in the background after an inspection, so the trace may
+  // land a few seconds later — poll until it appears (or give up quietly)
   useEffect(() => {
     setTrace(null);
     if (!selectedId) return;
     let cancelled = false;
-    (async () => {
+    let attempts = 0;
+    setTraceLoading(true);
+    async function poll() {
       try {
         const res = await fetch(`${API_BASE}/api/v1/inspect/${selectedId}/trace`);
-        if (res.ok && !cancelled) setTrace(await res.json());
-      } catch { /* no trace */ }
-    })();
+        if (cancelled) return;
+        if (res.ok) {
+          setTrace(await res.json());
+          setTraceLoading(false);
+          return;
+        }
+      } catch { /* retry */ }
+      attempts += 1;
+      if (!cancelled && attempts < 8) setTimeout(poll, 3000);
+      else if (!cancelled) setTraceLoading(false);
+    }
+    poll();
     return () => { cancelled = true; };
   }, [selectedId]);
 
@@ -304,7 +329,9 @@ export default function AgentView() {
   const selected = rows.find(r => r.id === selectedId) || null;
   const decided = !!selected?.engineer_decision;
   const pending = rows.filter(r => !r.engineer_decision).length;
-  const mode = MODE_CHIP[trace?.agent_mode] || MODE_CHIP.rule_only;
+  const mode = trace
+    ? (MODE_CHIP[trace.agent_mode] || MODE_CHIP.rule_only)
+    : (traceLoading ? MODE_CHIP.pending : MODE_CHIP.rule_only);
 
   // AI recommendation data with evidence sources
   const card = selected?.action_card || {};
