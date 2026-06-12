@@ -80,12 +80,17 @@ function MetaItem({ label, value, mono = true }) {
 function ActionCard({ insp, onAction }) {
   const [done, setDone] = useState(() => insp.checks.map(c => c.done));
   const human = insp.riskLevel === "High";
+  const showDetails = insp.riskLevel === "Medium" || insp.riskLevel === "High";
 
   return (
     <Panel title="Action Card" icon="shield" dense
       right={<span className="chip" style={{ color: "var(--accent)", borderColor: "var(--accent-line)" }}>AI 권고</span>}>
-      {/* summary row */}
-      <div style={{ display: "flex", gap: 20, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+      {/* summary row — vertically padded when Low, slides up when details open */}
+      <div style={{
+        display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap",
+        padding: showDetails ? "0 0 14px" : "26px 0",
+        transition: "padding .45s ease",
+      }}>
         <RiskGauge score={insp.riskScore} level={insp.riskLevel} size={132} />
         <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
           <RiskBadge level={insp.riskLevel} size="lg" />
@@ -105,6 +110,12 @@ function ActionCard({ insp, onAction }) {
         </div>
       </div>
 
+      {/* details — collapsed at Low risk, expands for Medium/High */}
+      <div style={{
+        display: "grid", gridTemplateRows: showDetails ? "1fr" : "0fr",
+        transition: "grid-template-rows .45s ease",
+      }}>
+      <div style={{ overflow: "hidden", opacity: showDetails ? 1 : 0, transition: "opacity .4s ease .12s" }}>
       <div className="divider" style={{ marginBottom: 14 }} />
 
       {/* three-column body */}
@@ -160,6 +171,8 @@ function ActionCard({ insp, onAction }) {
             ))}
           </div>
         </div>
+      </div>
+      </div>
       </div>
     </Panel>
   );
