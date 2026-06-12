@@ -50,6 +50,12 @@ class InspectRequest(BaseModel):
     use_llm: bool = True
 
 
+class InspectionChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    history: list[dict[str, str]] = Field(default_factory=list, max_length=20)
+    use_llm: bool = True
+
+
 class ReviewRequest(BaseModel):
     decision: Literal["approved", "needs_review", "false_alarm"]
     reviewer: str = Field(default="engineer", min_length=1, max_length=64)

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import { Icon, RiskBadge, Panel, StatusDot } from "./lib";
+import { Icon, RiskBadge, RiskGauge, Panel, Metric, StatusDot } from "./lib";
 import { WaferMap, GradCAM, buildWaferMap } from "./wafer";
 import { DefectCatBars, RiskHistogram } from "./charts";
 import { riskHist, defectCats, defaultInspection } from "./mock";
@@ -80,6 +80,33 @@ function MetaItem({ label, value, mono = true }) {
   );
 }
 
+function RiskScorePanel({ insp }) {
+  const human = insp.riskLevel === "High";
+  return (
+    <Panel title="리스크 점수" icon="shield" dense>
+      <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap" }}>
+        <RiskGauge score={insp.riskScore} level={insp.riskLevel} size={118} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+          <RiskBadge level={insp.riskLevel} size="lg" />
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5,
+            color: human ? "var(--high)" : "var(--low)", fontWeight: 600,
+          }}>
+            <Icon name={human ? "alert" : "check"} size={13} />
+            {human ? "사람 리뷰 필요" : "사람 리뷰 불필요"}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 22, marginLeft: "auto", paddingRight: 6, flexWrap: "wrap" }}>
+          <Metric label="신뢰도" value={(insp.confidence * 100).toFixed(1)} unit="%" />
+          <Metric label="추정 수율" value={insp.yieldEst} unit="%" accent="var(--low)" />
+          <Metric label="영향 다이" value={insp.dieFail} unit={`/ ${insp.dieTotal}`}
+            accent={human ? "var(--high)" : "var(--text)"} />
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
 function MetrologyTable({ rows }) {
   return (
     <Panel title="측정 결과" icon="gauge" dense pad={0}
@@ -139,9 +166,6 @@ export default function InspectionView() {
           <MetaItem label="Model"          value={insp.modelVersion || "v4.2.1"} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <RiskBadge level={insp.riskLevel} score={insp.riskScore} />
-          <span className="mono" style={{ fontSize: 11, color: "var(--text-3)" }}>신뢰도 {(insp.confidence * 100).toFixed(1)}%</span>
-          <div className="vdivider" style={{ height: 22 }} />
           <div style={{ textAlign: "right" }}>
             <div className="label-cap" style={{ fontSize: 9 }}>검사 시각</div>
             <div className="mono" style={{ fontSize: 11.5, color: "var(--text-2)" }}>{insp.startedAt?.slice(0,19)}</div>
@@ -184,7 +208,10 @@ export default function InspectionView() {
           </div>
         </Panel>
 
-        <MetrologyTable rows={insp.metrology} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
+          <RiskScorePanel insp={insp} />
+          <MetrologyTable rows={insp.metrology} />
+        </div>
       </div>
 
       {/* defect bars + risk histogram */}

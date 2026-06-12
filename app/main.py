@@ -14,12 +14,14 @@ from app.services.handoff import generate_handoff_report, get_latest_handoff_rep
 from app.services.mlops import pipeline_state, promote_latest, rollback, simulate_drift, simulate_retraining
 from app.services.pipeline import run_inspection
 from app.services.rag_eval import rag_evaluation_set
+from app.services.defect_chat import chat_about_inspection
 from app.services.schemas import (
     AutomationTickRequest,
     DemoSeedRequest,
     DriftRequest,
     HandoffReportRequest,
     InspectRequest,
+    InspectionChatRequest,
     PromoteRequest,
     RetrainRequest,
     ReviewRequest,
@@ -28,6 +30,7 @@ from app.services.schemas import (
 from app.services.storage import (
     browse_table,
     db_overview,
+    get_agent_trace_for_inspection,
     get_inspection,
     init_db,
     insert_alert,
@@ -87,6 +90,27 @@ def inspection_detail(inspection_id: str) -> dict[str, object]:
     if record is None:
         raise HTTPException(status_code=404, detail="Inspection not found")
     return record
+
+
+@app.get("/api/v1/inspect/{inspection_id}/trace")
+def inspection_trace(inspection_id: str) -> dict[str, object]:
+    """Latest Agent trace (final action, tool calls, mode) for an inspection."""
+    trace = get_agent_trace_for_inspection(inspection_id)
+    if trace is None:
+        raise HTTPException(status_code=404, detail="No agent trace for this inspection")
+    return trace
+
+
+@app.post("/api/v1/inspect/{inspection_id}/chat")
+def inspection_chat(inspection_id: str, request: InspectionChatRequest) -> dict[str, object]:
+    """Evidence-grounded LLM chat about one inspection."""
+    record = get_inspection(inspection_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    trace = get_agent_trace_for_inspection(inspection_id)
+    return chat_about_inspection(
+        record, request.message, request.history, trace, use_llm=request.use_llm
+    )
 
 
 @app.post("/api/v1/review/{inspection_id}")

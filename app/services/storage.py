@@ -530,6 +530,24 @@ def insert_agent_trace(inspection_id: str, trace: dict) -> str:
     return trace_id
 
 
+def get_agent_trace_for_inspection(inspection_id: str) -> dict | None:
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM agent_traces WHERE inspection_id = ? ORDER BY created_at DESC LIMIT 1",
+            (inspection_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    trace = json.loads(row["trace_json"])
+    trace.pop("messages", None)
+    return {
+        "trace_id": row["id"],
+        "inspection_id": inspection_id,
+        "created_at": row["created_at"],
+        **trace,
+    }
+
+
 def insert_pending_approval(
     inspection_id: str,
     tool_name: str,
