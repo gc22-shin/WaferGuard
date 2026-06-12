@@ -26,6 +26,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+import app.services.config  # noqa: E402,F401 — loads .env so LUXIA_API_KEY is set before the check below
+
 CORPUS_PATH = PROJECT_ROOT / "app" / "data" / "rag_corpus.json"
 BATCH_SIZE = 16
 EMBEDDING_DIM = 1024  # Luxia embedding dimension
