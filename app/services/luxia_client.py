@@ -20,11 +20,15 @@ All functions degrade gracefully when LUXIA_API_KEY is unset:
 """
 from __future__ import annotations
 
+import base64
 import logging
 import os
 from typing import Any
+from urllib.parse import urlparse
 
 import requests
+
+from app.services.config import OUTPUT_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,31 @@ def _headers() -> dict[str, str]:
     if not key:
         return {}
     return {"apikey": key, "Content-Type": "application/json"}
+
+
+def _to_data_uri(url: str) -> str | None:
+    """Resolve an image reference into something OpenAI can actually see.
+
+    The pipeline stores images as local paths (``/outputs/images/...``) served
+    by the local FastAPI app — OpenAI's servers cannot download those, so they
+    are inlined as base64 data URIs. Public http(s) URLs pass through as-is.
+    Returns None when the file cannot be resolved (caller should skip it).
+    """
+    if url.startswith("data:"):
+        return url
+    parsed = urlparse(url)
+    if parsed.scheme in ("http", "https") and parsed.hostname not in ("127.0.0.1", "localhost"):
+        return url
+    path = parsed.path if parsed.scheme else url
+    if not path.startswith("/outputs/"):
+        return None
+    file_path = OUTPUT_DIR / path.removeprefix("/outputs/")
+    if not file_path.is_file():
+        logger.warning("Image not found for LLM call, skipping: %s", url)
+        return None
+    suffix = file_path.suffix.lstrip(".").lower() or "png"
+    b64 = base64.b64encode(file_path.read_bytes()).decode("ascii")
+    return f"data:image/{suffix};base64,{b64}"
 
 
 # ---------------------------------------------------------------------------
@@ -96,7 +125,9 @@ def chat_with_tools(
             if original_content:
                 content_parts.append({"type": "text", "text": str(original_content)})
             for url in image_urls:
-                content_parts.append({"type": "image_url", "image_url": {"url": url}})
+                resolved = _to_data_uri(url)
+                if resolved:
+                    content_parts.append({"type": "image_url", "image_url": {"url": resolved}})
             msgs[last_user_idx]["content"] = content_parts
 
     payload: dict[str, Any] = {
