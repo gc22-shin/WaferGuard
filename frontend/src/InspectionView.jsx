@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Icon, RiskBadge, RiskGauge, Panel, Metric, StatusDot } from "./lib";
-import { WaferMap, GradCAM, ROIPatch, buildWaferMap } from "./wafer";
+import { WaferMap, GradCAM, buildWaferMap } from "./wafer";
 import { DefectCatBars, RiskHistogram } from "./charts";
 import { riskHist, defectCats, defaultInspection } from "./mock";
 import { useStream } from "./SettingsContext";
@@ -82,78 +82,92 @@ function ActionCard({ insp, onAction }) {
   const human = insp.riskLevel === "High";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <Panel title="Action Card" icon="shield" dense
-        right={<span className="chip" style={{ color: "var(--accent)", borderColor: "var(--accent-line)" }}>AI 권고</span>}>
-        <div style={{ display: "flex", gap: 14, alignItems: "center", marginBottom: 14 }}>
-          <RiskGauge score={insp.riskScore} level={insp.riskLevel} size={118} />
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1 }}>
-            <RiskBadge level={insp.riskLevel} size="lg" />
-            <div style={{ display: "flex", gap: 14 }}>
-              <Metric label="신뢰도" value={(insp.confidence * 100).toFixed(1)} unit="%" />
-              <Metric label="추정 수율" value={insp.yieldEst} unit="%" accent="var(--low)" />
-            </div>
-            <div style={{
-              display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5,
-              color: human ? "var(--high)" : "var(--low)", fontWeight: 600, marginTop: 2,
-            }}>
-              <Icon name={human ? "alert" : "check"} size={13} />
-              {human ? "사람 리뷰 필요" : "사람 리뷰 불필요"}
-            </div>
+    <Panel title="Action Card" icon="shield" dense
+      right={<span className="chip" style={{ color: "var(--accent)", borderColor: "var(--accent-line)" }}>AI 권고</span>}>
+      {/* summary row */}
+      <div style={{ display: "flex", gap: 20, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
+        <RiskGauge score={insp.riskScore} level={insp.riskLevel} size={132} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+          <RiskBadge level={insp.riskLevel} size="lg" />
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5,
+            color: human ? "var(--high)" : "var(--low)", fontWeight: 600,
+          }}>
+            <Icon name={human ? "alert" : "check"} size={13} />
+            {human ? "사람 리뷰 필요" : "사람 리뷰 불필요"}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 26, marginLeft: "auto", paddingRight: 6, flexWrap: "wrap" }}>
+          <Metric label="신뢰도" value={(insp.confidence * 100).toFixed(1)} unit="%" />
+          <Metric label="추정 수율" value={insp.yieldEst} unit="%" accent="var(--low)" />
+          <Metric label="영향 다이" value={insp.dieFail} unit={`/ ${insp.dieTotal}`}
+            accent={human ? "var(--high)" : "var(--text)"} />
+        </div>
+      </div>
+
+      <div className="divider" style={{ marginBottom: 14 }} />
+
+      {/* three-column body */}
+      <div style={{ display: "grid", gridTemplateColumns: "1.15fr 1.15fr 1fr", gap: 20, alignItems: "start" }}>
+        <div>
+          <div className="label-cap" style={{ marginBottom: 8 }}>추정 원인 · Probable Causes</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            {insp.causes.map((c, i) => (
+              <div key={i} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span className="mono" style={{ fontSize: 11, color: "var(--accent)", width: 34, flex: "none" }}>{(c.conf * 100).toFixed(0)}%</span>
+                  <span style={{ fontSize: 11.5, color: "var(--text-2)", minWidth: 0 }}>{c.label}</span>
+                </div>
+                <div style={{ height: 4, background: "var(--panel-2)", borderRadius: 99, overflow: "hidden" }}>
+                  <div style={{ width: `${c.conf * 100}%`, height: "100%", background: "var(--accent)", opacity: .7, borderRadius: 99 }} />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="label-cap" style={{ marginBottom: 7 }}>추정 원인 · Probable Causes</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 14 }}>
-          {insp.causes.map((c, i) => (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 9 }}>
-              <span className="mono" style={{ fontSize: 11, color: "var(--accent)", width: 34, flex: "none" }}>{(c.conf * 100).toFixed(0)}%</span>
-              <div style={{ flex: 1, height: 4, background: "var(--panel-2)", borderRadius: 99, overflow: "hidden" }}>
-                <div style={{ width: `${c.conf * 100}%`, height: "100%", background: "var(--accent)", opacity: .7, borderRadius: 99 }} />
-              </div>
-              <span style={{ fontSize: 11.5, color: "var(--text-2)", flex: "2 1 0", minWidth: 0 }}>{c.label}</span>
-            </div>
-          ))}
+        <div>
+          <div className="label-cap" style={{ marginBottom: 8 }}>추가 점검 항목 · Checks</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {insp.checks.slice(0, 5).map((c, i) => (
+              <button key={i} onClick={() => setDone(d => d.map((v, j) => j === i ? !v : v))}
+                className="focusable" style={{
+                  display: "flex", alignItems: "center", gap: 8, textAlign: "left", cursor: "pointer",
+                  background: "var(--panel-2)", border: "1px solid var(--border-soft)", borderRadius: 6,
+                  padding: "7px 9px", color: "var(--text-2)", font: "inherit",
+                }}>
+                <span style={{
+                  width: 15, height: 15, borderRadius: 4, border: `1.5px solid ${done[i] ? "var(--low)" : "var(--border-strong)"}`,
+                  background: done[i] ? "var(--low)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flex: "none",
+                  color: "#04140b",
+                }}>{done[i] && <Icon name="check" size={10} />}</span>
+                <span style={{ fontSize: 11.5, flex: 1, textDecoration: done[i] ? "line-through" : "none", opacity: done[i] ? .6 : 1 }}>{c.label}</span>
+                {c.priority === "info" && <span className="chip" style={{ fontSize: 9 }}>선택</span>}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="label-cap" style={{ marginBottom: 7 }}>추가 점검 항목 · Checks</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 14 }}>
-          {insp.checks.slice(0, 5).map((c, i) => (
-            <button key={i} onClick={() => setDone(d => d.map((v, j) => j === i ? !v : v))}
-              className="focusable" style={{
-                display: "flex", alignItems: "center", gap: 8, textAlign: "left", cursor: "pointer",
-                background: "var(--panel-2)", border: "1px solid var(--border-soft)", borderRadius: 6,
-                padding: "7px 9px", color: "var(--text-2)", font: "inherit",
-              }}>
-              <span style={{
-                width: 15, height: 15, borderRadius: 4, border: `1.5px solid ${done[i] ? "var(--low)" : "var(--border-strong)"}`,
-                background: done[i] ? "var(--low)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flex: "none",
-                color: "#04140b",
-              }}>{done[i] && <Icon name="check" size={10} />}</span>
-              <span style={{ fontSize: 11.5, flex: 1, textDecoration: done[i] ? "line-through" : "none", opacity: done[i] ? .6 : 1 }}>{c.label}</span>
-              {c.priority === "info" && <span className="chip" style={{ fontSize: 9 }}>선택</span>}
-            </button>
-          ))}
+        <div>
+          <div className="label-cap" style={{ marginBottom: 8 }}>권장 다음 액션 · Next</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {insp.nextActions.map((a, i) => (
+              <button key={i} className={`btn ${a.kind === "primary" ? "btn-accent" : ""}`}
+                onClick={() => onAction && onAction(a)}
+                style={{ justifyContent: "flex-start", width: "100%" }}>
+                <Icon name={i === 0 ? "play" : i === 1 ? "flag" : "note"} size={14} />{a.label}
+              </button>
+            ))}
+          </div>
         </div>
-
-        <div className="label-cap" style={{ marginBottom: 7 }}>권장 다음 액션 · Next</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-          {insp.nextActions.map((a, i) => (
-            <button key={i} className={`btn ${a.kind === "primary" ? "btn-accent" : ""}`}
-              onClick={() => onAction && onAction(a)}
-              style={{ justifyContent: "flex-start", width: "100%" }}>
-              <Icon name={i === 0 ? "play" : i === 1 ? "flag" : "note"} size={14} />{a.label}
-            </button>
-          ))}
-        </div>
-      </Panel>
-    </div>
+      </div>
+    </Panel>
   );
 }
 
 function MetrologyTable({ rows }) {
   return (
-    <Panel title="계측 룰 · Metrology" icon="gauge" dense pad={0}
+    <Panel title="측정 결과" icon="gauge" dense pad={0}
       right={<span className="mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>{rows.filter(r => r.ok).length}/{rows.length} PASS</span>}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
         <thead>
@@ -230,74 +244,58 @@ export default function InspectionView() {
         </div>
       </div>
 
-      {/* main grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 372px", gap: 12, alignItems: "start" }}>
-        {/* left */}
+      {/* main grid — imagery and Action Card split 50/50 */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "start" }}>
+        {/* left — imagery + metrology */}
         <div style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-          {/* imagery */}
-          <Panel title="검사 영상 · Wafer Map / Grad-CAM / ROI" icon="layers" dense
-            right={<span className="mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>{insp.dieTotal} die · {insp.dieFail} flagged</span>}>
-            <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
-              <figure style={{ margin: 0, textAlign: "center" }}>
-                {insp.imageUrl
-                  ? <img src={`${imageBase}${insp.imageUrl}`} alt="wafer map"
-                      style={{ width: 236, height: 236, objectFit: "contain", borderRadius: 8, background: "var(--panel-2)" }} />
-                  : <WaferMap map={insp.waferMap} size={236} scanning={scanning} />}
-                <figcaption style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 12 }}>Wafer Map · {insp.wafer}</figcaption>
-              </figure>
-              <figure style={{ margin: 0, textAlign: "center" }}>
-                {insp.overlayUrl
-                  ? <img src={`${imageBase}${insp.overlayUrl}`} alt="grad-cam"
-                      style={{ width: 236, height: 236, objectFit: "contain", borderRadius: 8, background: "#0b1a2e" }} />
-                  : <GradCAM size={236} hot={hot} />}
-                <figcaption style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 6 }}>Grad-CAM 활성화 맵</figcaption>
-              </figure>
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                <span className="label-cap">ROI 확대 (3)</span>
-                {insp.roiUrl
-                  ? <>
-                      <img src={`${imageBase}${insp.roiUrl}`} alt="roi"
-                        style={{ width: 116, height: 116, objectFit: "contain", borderRadius: 6, background: "var(--panel-2)", border: "1px solid var(--border-strong)" }} />
-                      <ROIPatch label="ROI-2" defect={insp.defectType} sev="low" />
-                      <ROIPatch label="ROI-3" defect={insp.defectType} sev="med" />
-                    </>
-                  : <>
-                      <ROIPatch label="ROI-1" defect={insp.defectType} sev="low" />
-                      <ROIPatch label="ROI-2" defect={insp.defectType} sev="low" />
-                      <ROIPatch label="ROI-3" defect={insp.defectType} sev="med" />
-                    </>}
-              </div>
-            </div>
-          </Panel>
-
-          {/* AI report */}
-          <Panel title="AI 분석 리포트" icon="bot" dense
-            right={<><span className="chip" style={{ fontSize: 9.5 }}>{insp.modelVersion || "v4.2.1"}</span><span className="mono" style={{ fontSize: 10, color: "var(--text-3)" }}>ko-KR</span></>}>
-            <div style={{ fontSize: 12.5, lineHeight: 1.72, color: "var(--text-2)", whiteSpace: "pre-wrap", textWrap: "pretty" }}>
-              {(insp.report || "").split("**").map((seg, i) =>
-                i % 2 ? <strong key={i} style={{ color: "var(--text)", fontWeight: 650 }}>{seg}</strong> : seg
-              )}
-            </div>
-          </Panel>
-
-          {/* metrology + defect bars */}
-          <div style={{ display: "grid", gridTemplateColumns: "1.25fr 1fr", gap: 12, alignItems: "start" }}>
-            <MetrologyTable rows={insp.metrology} />
-            <Panel title="결함 카테고리 빈도 · 7d" icon="activity" dense>
-              <DefectCatBars data={defectCats} />
-            </Panel>
+        <Panel title="검사 영상" icon="layers" dense
+          right={<span className="mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>{insp.dieTotal} die · {insp.dieFail} flagged</span>}>
+          <div style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
+            <figure style={{ margin: 0, textAlign: "center" }}>
+              {insp.imageUrl
+                ? <img src={`${imageBase}${insp.imageUrl}`} alt="wafer map"
+                    style={{ width: 220, height: 220, objectFit: "contain", borderRadius: 8, background: "var(--panel-2)" }} />
+                : <WaferMap map={insp.waferMap} size={220} scanning={scanning} />}
+              <figcaption style={{ fontSize: 10, color: "var(--text-3)", marginTop: 6 }}>Wafer Map · {insp.wafer}</figcaption>
+            </figure>
+            <figure style={{ margin: 0, textAlign: "center" }}>
+              {insp.overlayUrl
+                ? <img src={`${imageBase}${insp.overlayUrl}`} alt="grad-cam"
+                    style={{ width: 220, height: 220, objectFit: "contain", borderRadius: 8, background: "#0b1a2e" }} />
+                : <GradCAM size={220} hot={hot} />}
+              <figcaption style={{ fontSize: 10, color: "var(--text-3)", marginTop: 6 }}>Grad-CAM 활성화 맵</figcaption>
+            </figure>
           </div>
+        </Panel>
 
-          <Panel title="리스크 점수 분포 · 24h" icon="pulse" dense
-            right={<span className="mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>595 inspections</span>}>
-            <RiskHistogram data={riskHist} />
-          </Panel>
+        <MetrologyTable rows={insp.metrology} />
         </div>
 
-        {/* right — Action Card (sticky) */}
-        <div style={{ position: "sticky", top: 0 }}>
+        {/* right — Action Card (expanded) */}
+        <div style={{ minWidth: 0 }}>
           <ActionCard insp={insp} />
         </div>
+      </div>
+
+      {/* AI report */}
+      <Panel title="AI 분석 리포트" icon="bot" dense
+        right={<><span className="chip" style={{ fontSize: 9.5 }}>{insp.modelVersion || "v4.2.1"}</span><span className="mono" style={{ fontSize: 10, color: "var(--text-3)" }}>ko-KR</span></>}>
+        <div style={{ fontSize: 12.5, lineHeight: 1.72, color: "var(--text-2)", whiteSpace: "pre-wrap", textWrap: "pretty" }}>
+          {(insp.report || "").split("**").map((seg, i) =>
+            i % 2 ? <strong key={i} style={{ color: "var(--text)", fontWeight: 650 }}>{seg}</strong> : seg
+          )}
+        </div>
+      </Panel>
+
+      {/* defect bars + risk histogram */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1.25fr", gap: 12, alignItems: "start" }}>
+        <Panel title="결함 카테고리 빈도 · 7d" icon="activity" dense>
+          <DefectCatBars data={defectCats} />
+        </Panel>
+        <Panel title="리스크 점수 분포 · 24h" icon="pulse" dense
+          right={<span className="mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>595 inspections</span>}>
+          <RiskHistogram data={riskHist} />
+        </Panel>
       </div>
     </div>
   );
