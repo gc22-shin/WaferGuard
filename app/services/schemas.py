@@ -47,6 +47,7 @@ class InspectRequest(BaseModel):
     defect_count: int | None = Field(default=None, ge=0, le=1000000)
     yield_proxy: float = Field(default=0.982, ge=0, le=1)
     operator_note: str = Field(default="", max_length=500)
+    use_llm: bool = True
 
 
 class ReviewRequest(BaseModel):

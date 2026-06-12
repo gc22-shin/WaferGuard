@@ -68,6 +68,21 @@ export default function SettingsView() {
               onChange={e => updateSettings({ anomalyRate: Number(e.target.value) })} />
             <span className="mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>0% (전부 정상) — 100% (전부 비정상)</span>
           </Field>
+
+          <Field label="Agent LLM 분석">
+            <button
+              className={`btn ${settings.useLlm ? "btn-accent" : ""}`}
+              onClick={() => updateSettings({ useLlm: !settings.useLlm })}
+              style={{ minWidth: 130 }}>
+              <Icon name={settings.useLlm ? "bot" : "gauge"} size={13} />
+              {settings.useLlm ? "실제 LLM 호출" : "룰 기반 폴백"}
+            </button>
+            <span style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 4, lineHeight: 1.5 }}>
+              {settings.useLlm
+                ? "Medium/High 검사마다 GPT-4o-mini 분석 (검사당 5초 내외)"
+                : "LLM 호출 없이 즉시 처리 — 빠르지만 룰 기반 판단만 수행"}
+            </span>
+          </Field>
         </div>
 
         <div style={{ marginTop: 18 }}>

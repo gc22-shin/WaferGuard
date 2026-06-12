@@ -8,6 +8,7 @@ const DEFAULT_SETTINGS = {
   enabled: true,
   intervalMs: 2000,
   anomalyRate: 0.15,
+  useLlm: true,
   anomalyTypes: [...ANOMALY_DEFECTS],
   basePayload: {
     lot_id: "LOT-DEMO-042",
@@ -99,6 +100,7 @@ export function SettingsProvider({ children }) {
       yield_proxy: Number(bp.yield_proxy),
       image_source: "synthetic_wafer",
       proxy_dataset: "mvtec-ad",
+      use_llm: s.useLlm !== false,
     };
 
     inFlightRef.current = true;

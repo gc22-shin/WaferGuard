@@ -496,18 +496,33 @@ def run(evidence: dict) -> dict:
         "iteration": 0,
     }
 
-    # Determine agent mode
-    agent_mode = "llm" if os.environ.get("LUXIA_API_KEY", "").strip() else "stub"
+    # Determine agent mode — the request can force rule-based fallback via use_llm=False
+    use_llm = bool(evidence.get("use_llm", True))
+    agent_mode = "llm" if use_llm and os.environ.get("LUXIA_API_KEY", "").strip() else "stub"
 
-    try:
-        graph = _get_graph()
-        if graph is not None:
-            final_state = graph.invoke(initial_state)
-        else:
-            final_state = _run_sequential(initial_state)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("Agent graph execution failed: %s", exc)
-        final_state = _node_final_action(initial_state)
+    if agent_mode == "llm":
+        try:
+            graph = _get_graph()
+            if graph is not None:
+                final_state = graph.invoke(initial_state)
+            else:
+                final_state = _run_sequential(initial_state)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Agent graph execution failed: %s", exc)
+            final_state = _node_final_action(initial_state)
+    else:
+        # Fast rule-based fallback: no LLM round-trips, summarise evidence directly.
+        rag_cases = evidence.get("rag_cases") or []
+        first_action = (
+            rag_cases[0].get("action") if rag_cases and isinstance(rag_cases[0], dict) else None
+        ) or "엔지니어 검토 큐에서 수동 확인"
+        final_state = dict(initial_state)
+        final_state["final_action"] = (
+            f"[룰 기반 판단 — LLM 미사용] {evidence.get('defect_type', '결함')} 패턴, "
+            f"위험도 {evidence.get('risk_level', '?')} "
+            f"(score {evidence.get('risk_score', 0):.2f}, 신뢰도 {evidence.get('confidence', 0):.1%}).\n"
+            f"권장 우선 조치: {first_action}."
+        )
 
     # Persist trace
     trace = {

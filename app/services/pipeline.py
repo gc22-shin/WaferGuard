@@ -94,6 +94,7 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
                 f"/outputs/images/{image_result['overlay_path'].name}",
                 f"/outputs/images/{image_result['roi_path'].name}",
             ],
+            "use_llm": request.use_llm,
         }
         try:
             from app.services.agent import run as agent_run  # noqa: PLC0415
