@@ -3,7 +3,7 @@ import React from "react";
 const DIE_COLOR = {
   good:     "var(--low)",
   marginal: "var(--med)",
-  fail:     "#4d9bec",
+  fail:     "#ce48d6",
 };
 
 export function buildWaferMap(failRate, clusterBias) {
@@ -86,9 +86,9 @@ export function GradCAM({ size = 240, hot = "edge" }) {
           <radialGradient id="camCool"><stop offset="0%" stopColor="#1e3a5f" /><stop offset="100%" stopColor="#0b1a2e" /></radialGradient>
           {blobs.map((b, i) => (
             <radialGradient key={i} id={`camHot${i}`}>
-              <stop offset="0%" stopColor={b.i > 0.6 ? "#35d49a" : b.i > 0.3 ? "#2fc4b2" : "#3DB4D0"} stopOpacity={b.i} />
-              <stop offset="45%" stopColor={b.i > 0.5 ? "#2fc4b2" : "#3DB4D0"} stopOpacity={b.i * 0.5} />
-              <stop offset="100%" stopColor="#3DB4D0" stopOpacity="0" />
+              <stop offset="0%" stopColor={b.i > 0.6 ? "#ff4a36" : b.i > 0.3 ? "#c8d83c" : "#3d7bec"} stopOpacity={b.i} />
+              <stop offset="45%" stopColor={b.i > 0.5 ? "#c8d83c" : "#3d7bec"} stopOpacity={b.i * 0.5} />
+              <stop offset="100%" stopColor="#3d7bec" stopOpacity="0" />
             </radialGradient>
           ))}
         </defs>
@@ -99,13 +99,13 @@ export function GradCAM({ size = 240, hot = "edge" }) {
               style={{ filter: "blur(3px)", animation: `fadeIn .5s ${i * 0.1}s both` }} />
           ))}
           <circle cx={10 + blobs[0].x * inner} cy={10 + blobs[0].y * inner} r={blobs[0].r * inner * 0.5}
-            fill="none" stroke="#7be3c0" strokeWidth="0.8" strokeDasharray="3 3" opacity="0.55" />
+            fill="none" stroke="#ffce6a" strokeWidth="0.8" strokeDasharray="3 3" opacity="0.55" />
         </g>
         <path d={`M${cx - 7} ${size - 12} L${cx} ${size - 5} L${cx + 7} ${size - 12}Z`} fill="var(--bg)" stroke="var(--border-strong)" strokeWidth="1.5" />
       </svg>
       <div style={{ position: "absolute", top: 8, right: 8, display: "flex", flexDirection: "column", gap: 2, alignItems: "flex-end" }}>
-        <span className="mono" style={{ fontSize: 8.5, color: "#35d49a" }}>■ high act.</span>
-        <span className="mono" style={{ fontSize: 8.5, color: "#3DB4D0" }}>■ low act.</span>
+        <span className="mono" style={{ fontSize: 8.5, color: "#ff6a5a" }}>■ high act.</span>
+        <span className="mono" style={{ fontSize: 8.5, color: "#3d7bec" }}>■ low act.</span>
       </div>
     </div>
   );

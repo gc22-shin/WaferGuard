@@ -3,6 +3,7 @@ import { Icon, RiskBadge, StatusDot } from "./lib";
 import { criticalAlertData } from "./mock";
 
 import InspectionView  from "./InspectionView";
+import AgentView       from "./AgentView";
 import MlopsView       from "./MlopsView";
 import DatabaseView    from "./DatabaseView";
 import AlertCenterView from "./AlertCenterView";
@@ -12,6 +13,7 @@ import { SettingsProvider, useStream } from "./SettingsContext";
 const NAV = [
   { id: "inspect", icon: "layers",  label: "실시간 검사",    en: "Live Inspection", View: InspectionView },
   { id: "mlops",   icon: "box",     label: "MLOps 콘솔",    en: "MLOps",           View: MlopsView },
+  { id: "agent",   icon: "bot",     label: "에이전트 분석",  en: "Agent",           View: AgentView },
   { id: "data",    icon: "history", label: "데이터 관리",    en: "Data & RAG",      View: DatabaseView },
   { id: "alert",   icon: "radio",   label: "Alert Center", en: "Alerts",          View: AlertCenterView, badge: 1 },
   { id: "settings",icon: "cpu",     label: "설정",          en: "Settings",        View: SettingsView },
