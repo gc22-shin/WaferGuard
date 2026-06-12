@@ -84,16 +84,17 @@ def _render_real_wafer(wafer_map: np.ndarray) -> tuple[Image.Image, np.ndarray]:
     Background pixels (0) are dark; normal die (1) is light gray; defect die
     (2) is highlighted magenta so it stays distinct from the jet heatmap
     colors. The returned mask marks defect dies (value 2).
+
+    WM-811K die grids come in many aspect ratios; the map is stretched to
+    fill the square canvas so every wafer renders with the same circular
+    proportion and the UI layout stays stable.
     """
     target = 224
-    src_h, src_w = wafer_map.shape
-    scale = target / max(src_h, src_w)
-    new_h, new_w = int(round(src_h * scale)), int(round(src_w * scale))
-    # Nearest-neighbour upscale to preserve the discrete die grid.
-    arr = Image.fromarray(wafer_map, mode="L").resize((new_w, new_h), Image.Resampling.NEAREST)
+    # Nearest-neighbour resize to preserve the discrete die grid.
+    arr = Image.fromarray(wafer_map, mode="L").resize((target, target), Image.Resampling.NEAREST)
     upscaled = np.asarray(arr)
 
-    rgb = np.zeros((new_h, new_w, 3), dtype=np.uint8)
+    rgb = np.zeros((target, target, 3), dtype=np.uint8)
     background = upscaled == 0
     normal = upscaled == 1
     defect = upscaled == 2
@@ -101,18 +102,8 @@ def _render_real_wafer(wafer_map: np.ndarray) -> tuple[Image.Image, np.ndarray]:
     rgb[normal] = np.array([178, 178, 178], dtype=np.uint8)
     rgb[defect] = np.array([206, 72, 214], dtype=np.uint8)
 
-    # Centre-pad to a square canvas so downstream code sees a fixed size.
-    canvas = np.zeros((target, target, 3), dtype=np.uint8)
-    canvas[:] = np.array([12, 18, 24], dtype=np.uint8)
-    off_y = (target - new_h) // 2
-    off_x = (target - new_w) // 2
-    canvas[off_y:off_y + new_h, off_x:off_x + new_w] = rgb
-
-    mask = np.zeros((target, target), dtype=bool)
-    mask[off_y:off_y + new_h, off_x:off_x + new_w] = defect
-
-    image = Image.fromarray(canvas, mode="RGB")
-    return image, mask
+    image = Image.fromarray(rgb, mode="RGB")
+    return image, defect
 
 
 def _create_heatmap(mask: np.ndarray) -> Image.Image:

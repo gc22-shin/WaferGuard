@@ -1,6 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Icon, RiskBadge, StatusDot } from "./lib";
-import { criticalAlertData } from "./mock";
+import React, { useEffect, useState } from "react";
+import { Icon, StatusDot } from "./lib";
 
 import InspectionView  from "./InspectionView";
 import AgentView       from "./AgentView";
@@ -8,7 +7,7 @@ import MlopsView       from "./MlopsView";
 import DatabaseView    from "./DatabaseView";
 import AlertCenterView from "./AlertCenterView";
 import SettingsView    from "./SettingsView";
-import { SettingsProvider, useStream } from "./SettingsContext";
+import { SettingsProvider } from "./SettingsContext";
 
 const NAV = [
   { id: "inspect", icon: "layers",  label: "실시간 검사",    en: "Live Inspection", View: InspectionView },
@@ -40,42 +39,6 @@ function Logo() {
       <div style={{ lineHeight: 1 }}>
         <div style={{ fontSize: 14.5, fontWeight: 700, letterSpacing: "-.02em", color: "var(--text)" }}>WaferGuard</div>
         <div className="mono" style={{ fontSize: 8.5, color: "var(--text-3)", letterSpacing: ".08em", marginTop: 1 }}>FAB QUALITY OPS</div>
-      </div>
-    </div>
-  );
-}
-
-function CriticalAlert({ data, onView, onClose }) {
-  return (
-    <div className="toast-in" style={{
-      position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 200,
-      width: "min(880px, calc(100vw - 32px))",
-    }}>
-      <div className="pulse-high" style={{
-        display: "flex", alignItems: "center", gap: 14, padding: "13px 16px",
-        background: "linear-gradient(90deg, color-mix(in oklab, var(--high) 22%, var(--panel)), var(--panel))",
-        border: "1.5px solid var(--high)", borderRadius: 11,
-        boxShadow: "0 12px 40px -10px var(--high-glow)",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 38, height: 38, borderRadius: 9,
-          background: "var(--high)", color: "#fff", flex: "none" }}>
-          <Icon name="alert" size={20} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-            <span style={{ fontSize: 13.5, fontWeight: 700, color: "var(--high)", letterSpacing: ".02em" }}>CRITICAL · HIGH 리스크</span>
-            <RiskBadge level="High" score={data.riskScore} />
-            <span className="mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>{data.lot} · {data.wafer}</span>
-          </div>
-          <div style={{ fontSize: 12.5, color: "var(--text)", marginTop: 3, fontWeight: 500 }}>{data.title}</div>
-          <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 2 }}>
-            {data.cause} · <span className="mono">{data.tool}</span> · 영향 다이 <span className="mono" style={{ color: "var(--high)" }}>{data.affectedDie}</span>
-          </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>
-          <button className="btn btn-danger" onClick={onView}>조치 보기</button>
-          <button className="btn btn-ghost" onClick={onClose} aria-label="닫기" style={{ padding: "7px 9px" }}><Icon name="x" size={15} /></button>
-        </div>
       </div>
     </div>
   );
@@ -125,48 +88,16 @@ function Sidebar({ active, setActive }) {
 function AppInner() {
   const [theme, setTheme]   = useState("dark");
   const [active, setActive] = useState("inspect");
-  const [alert, setAlert]   = useState(false);
-  const [alertData, setAlertData] = useState(criticalAlertData);
-  const { latest, tick } = useStream();
-  const lastAlertTick = useRef(0);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
-  // auto-trigger critical alert when the stream emits a new High-risk inspection
-  useEffect(() => {
-    if (!latest || tick === lastAlertTick.current) return;
-    if (latest.risk_level === "High") {
-      lastAlertTick.current = tick;
-      setAlertData({
-        riskScore: Math.round((latest.risk_score ?? 0) * 100),
-        lot: latest.lot_id || "LOT-?",
-        wafer: latest.wafer_id || "W?",
-        title: `High 리스크 — ${latest.defect_type || "결함"} 감지`,
-        tool: `${latest.equipment_id || "?"} / ${latest.process_step || "?"}`,
-        cause: latest.defect_type || "분류 불명",
-        affectedDie: Math.round((latest.hotspot_ratio || 0) * 612),
-      });
-      setAlert(true);
-    }
-  }, [tick, latest]);
-
   const cur = NAV.find(n => n.id === active);
   const View = cur.View;
 
-  function simulate() { setActive("alert"); setAlert(true); setAlertData(criticalAlertData); }
-
   return (
     <div style={{ minHeight: "100vh" }}>
-      {alert && (
-        <CriticalAlert
-          data={alertData}
-          onView={() => { setActive("inspect"); setAlert(false); }}
-          onClose={() => setAlert(false)}
-        />
-      )}
-
       {/* top app bar */}
       <header style={{
         display: "flex", alignItems: "center", gap: 16, padding: "0 18px", height: 54,
@@ -181,10 +112,6 @@ function AppInner() {
           <span className="chip"><span style={{ color: "var(--text-3)" }}>큐</span> <span className="mono">3 대기</span></span>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 14 }}>
-          <button className="btn btn-ghost" onClick={simulate} style={{ color: "var(--high)" }}>
-            <Icon name="alert" size={15} />알람 시뮬
-          </button>
-          <div className="vdivider" style={{ height: 22 }} />
           <div style={{ textAlign: "right", lineHeight: 1.2 }}>
             <div className="label-cap" style={{ fontSize: 8.5 }}>KST · 야간 A조</div>
             <Clock />
@@ -211,9 +138,7 @@ function AppInner() {
           </div>
 
           <div key={active} className="fade-in">
-            {active === "alert"
-              ? <AlertCenterView onSimulate={() => setAlert(true)} />
-              : <View />}
+            <View />
           </div>
         </main>
       </div>

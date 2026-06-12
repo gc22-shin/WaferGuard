@@ -10,23 +10,9 @@ const RECENT = [
   { t: "23:50:14", lvl: "Low",    lot: "LOT-2D48-090 / W12", text: "엣지 비드 미세 변동",               status: "정상" },
 ];
 
-export default function AlertCenterView({ onSimulate }) {
+export default function AlertCenterView() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <Panel title="알람 시뮬레이션 · Critical Alert" icon="alert" dense>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontSize: 12.5, color: "var(--text-2)", lineHeight: 1.6 }}>
-              High 리스크 검출 시 전역 상단에 사이렌 컬러 토스트가 표시됩니다. 아래 버튼으로 오버레이를 시연하세요.
-              <span style={{ color: "var(--text-3)" }}> (사운드 비활성)</span>
-            </div>
-          </div>
-          <button className="btn btn-danger" onClick={onSimulate}>
-            <Icon name="alert" size={14} />High 알람 시뮬레이션
-          </button>
-        </div>
-      </Panel>
-
       <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr", gap: 12, alignItems: "start" }}>
         <Panel title="최근 알람 · Recent Alerts" icon="radio" dense pad={0}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
