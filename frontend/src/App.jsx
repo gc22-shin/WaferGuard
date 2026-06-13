@@ -4,7 +4,6 @@ import { Icon, RiskBadge, StatusDot } from "./lib";
 import InspectionWorkspace from "./InspectionWorkspace";
 import MlopsWorkspace      from "./MlopsWorkspace";
 import DatabaseView    from "./DatabaseView";
-import AlertCenterView from "./AlertCenterView";
 import SettingsView    from "./SettingsView";
 import { SettingsProvider, useStream } from "./SettingsContext";
 import { MlopsAgentProvider } from "./MlopsAgentContext";
@@ -14,7 +13,6 @@ const NAV = [
   { id: "inspect", icon: "layers",  label: "실시간 검사",    en: "Live Inspection", View: InspectionWorkspace },
   { id: "mlops",   icon: "box",     label: "MLOps 콘솔",    en: "MLOps",           View: MlopsWorkspace },
   { id: "data",    icon: "history", label: "데이터 관리",    en: "Data & RAG",      View: DatabaseView },
-  { id: "alert",   icon: "radio",   label: "Alert Center", en: "Alerts",          View: AlertCenterView, badge: 1 },
   { id: "settings",icon: "cpu",     label: "설정",          en: "Settings",        View: SettingsView },
 ];
 

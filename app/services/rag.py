@@ -524,15 +524,23 @@ def browse_cases(
     Routes through the unified ``retrieve_cases`` path (vector when available,
     case library otherwise) and reports which source answered so the UI can
     label the result honestly.
+
+    ``defect_type`` may be empty/unknown — that means "no filter" (the user
+    cleared the chip), so we run a general search across the corpus instead of
+    biasing to one defect class.
     """
-    dt = defect_type if defect_type in CASE_LIBRARY else "Random"
+    q = (query or "").strip()
+    dt_known = defect_type in CASE_LIBRARY
+    pool_type = defect_type if dt_known else "Random"
+    # filter cleared and no keyword → a generic query so retrieval isn't biased
+    effective_query = q or (None if dt_known else "반도체 공정 결함 대응 사례와 권장 조치")
     k = max(1, min(int(k or 6), 12))
-    cases = retrieve_cases(dt, line_id, query_text=query, k=k)
+    cases = retrieve_cases(pool_type, line_id, query_text=effective_query, k=k)
     sources = {c.get("source") for c in cases}
     answered_by = "vector" if sources - {"case_library", "sop"} else "library"
     return {
-        "defect_type": dt,
-        "query": (query or "").strip(),
+        "defect_type": defect_type if dt_known else "",
+        "query": q,
         "line_id": line_id,
         "count": len(cases),
         "source": answered_by,

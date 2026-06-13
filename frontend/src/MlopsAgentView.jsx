@@ -358,7 +358,7 @@ export default function MlopsAgentView() {
   const activeMode = AUTONOMY.find(a => a.id === autonomy);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "start" }}>
     <Panel title="MLOps 에이전트 · 모니터링 로그" icon="bot" dense
       right={
         <button className="btn btn-accent" onClick={run} disabled={running || !settings.useLlm}
