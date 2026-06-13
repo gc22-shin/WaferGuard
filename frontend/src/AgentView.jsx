@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Icon, Panel, Metric, RiskBadge, RiskGauge, Modal, Markdown, ToolCalls } from "./lib";
 import { useStream } from "./SettingsContext";
+import { useDefectChat } from "./DefectChatContext";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 
@@ -225,6 +226,10 @@ function AgentAnalysisBubble({
 }) {
   const [showReasoning, setShowReasoning] = useState(false);
   const hasReasoning = llmOn && (agentRun.displayTools.length > 0 || agentRun.displayText || agentRun.running);
+  // hold the causes/actions back until the agent's output has actually arrived,
+  // so they don't pop up before the LLM has reasoned. Reveal once: there's agent
+  // output, the case is already decided, or we've stopped waiting (poll gave up).
+  const analysisReady = decided || !!agentRun.displayText || (!traceLoading && !agentRun.running);
 
   return (
     <div style={{
@@ -243,22 +248,40 @@ function AgentAnalysisBubble({
         </button>
       </div>
 
-      {/* 추정 원인 — % UI, click 근거 to inspect */}
-      <div>
-        <div className="label-cap" style={{ marginBottom: 6 }}>추정 원인 · Probable Causes</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-          {causes.map((c, i) => <CauseCard key={i} idx={i} cause={c} onEvidence={onEvidence} />)}
-          {causes.length === 0 && <span style={{ fontSize: 11, color: "var(--text-3)" }}>추정 원인이 아직 없습니다.</span>}
+      {!analysisReady ? (
+        /* waiting for the agent's LLM output — show progress, not premature results */
+        <div className="panel-inset" style={{ padding: "16px 12px", display: "flex", flexDirection: "column", gap: 9, alignItems: "center", textAlign: "center" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 7, color: "var(--text-2)", fontSize: 12 }}>
+            <Icon name="refresh" size={13} style={{ animation: "spin 1s linear infinite" }} />
+            에이전트가 증거를 분석하는 중입니다…
+          </span>
+          <span style={{ fontSize: 10.5, color: "var(--text-3)", lineHeight: 1.5 }}>
+            분석이 끝나면 추정 원인과 권장 다음 액션이 표시됩니다.
+          </span>
+          {agentRun.displayTools.length > 0 && (
+            <div style={{ width: "100%", marginTop: 2 }}><ToolCalls calls={agentRun.displayTools} /></div>
+          )}
         </div>
-      </div>
+      ) : (
+        <>
+          {/* 추정 원인 — % UI, click 근거 to inspect */}
+          <div>
+            <div className="label-cap" style={{ marginBottom: 6 }}>추정 원인 · Probable Causes</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {causes.map((c, i) => <CauseCard key={i} idx={i} cause={c} onEvidence={onEvidence} />)}
+              {causes.length === 0 && <span style={{ fontSize: 11, color: "var(--text-3)" }}>추정 원인이 아직 없습니다.</span>}
+            </div>
+          </div>
 
-      {/* 권장 다음 액션 — select / write your own → record + RAG write-back */}
-      <div>
-        <div className="label-cap" style={{ marginBottom: 6 }}>권장 다음 액션 · Next Actions</div>
-        <ActionSelector actions={actions} decided={decided} busy={busy}
-          onExecute={onExecute} onEvidence={onEvidence}
-          reviewResult={reviewResult} reviewNote={reviewNote} />
-      </div>
+          {/* 권장 다음 액션 — select / write your own → record + RAG write-back */}
+          <div>
+            <div className="label-cap" style={{ marginBottom: 6 }}>권장 다음 액션 · Next Actions</div>
+            <ActionSelector actions={actions} decided={decided} busy={busy}
+              onExecute={onExecute} onEvidence={onEvidence}
+              reviewResult={reviewResult} reviewNote={reviewNote} />
+          </div>
+        </>
+      )}
 
       {/* full reasoning — collapsed by default, click to verify how the agent judged */}
       {hasReasoning && (
@@ -289,12 +312,16 @@ function AgentChat({
   inspectionId, llmOn, causes, actions, decided, busy,
   onExecute, onEvidence, reviewResult, reviewNote, agentRun, traceLoading, mode,
 }) {
-  const [msgs, setMsgs] = useState([]);
+  // chat history lives in a root-level store keyed by inspection id, so it
+  // survives navigating to another tab and back
+  const { getChat, setChat } = useDefectChat();
+  const msgs = getChat(inspectionId);
+  const setMsgs = (updater) => setChat(inspectionId, updater);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const scrollRef = useRef(null);
 
-  useEffect(() => { setMsgs([]); setInput(""); }, [inspectionId]);
+  useEffect(() => { setInput(""); }, [inspectionId]);
   // keep the analysis card in view on open; only follow the conversation once it starts
   useEffect(() => {
     if (msgs.length > 0 && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -326,9 +353,15 @@ function AgentChat({
     }
   }
 
-  // ground the chat in exactly what the engineer is looking at
+  // ground the chat in exactly what the engineer is looking at — the agent's
+  // analysis of THIS defect, plus the on-screen causes / actions
   function buildExtraContext() {
     const lines = [];
+    const analysis = (agentRun?.displayText || "").trim();
+    if (analysis) {
+      lines.push("에이전트가 분석한 현재 결함 판단 (이 검사에 대한 결론):");
+      lines.push(analysis);
+    }
     if (causes?.length) {
       lines.push("화면에 표시된 추정 원인 (확신도순):");
       causes.forEach((c, i) => lines.push(`${i + 1}. ${c.label} (${Math.round((c.conf ?? 0) * 100)}%)`));
@@ -704,8 +737,10 @@ function ActionSelector({ actions, decided, busy, onExecute, onEvidence, reviewR
 /* ---------- main view ---------- */
 
 export default function AgentView({ focusId, onFocusHandled }) {
-  const { tick, settings } = useStream();
-  const [rows, setRows] = useState([]);
+  const { settings, riskQueue, setRiskQueue } = useStream();
+  // the queue is the live, session-scoped list of Medium/High inspections — fed
+  // by the stream (SettingsContext), not bulk-fetched from the DB. Empty on refresh.
+  const rows = riskQueue;
   const [selectedId, setSelectedId] = useState(null);
   const [listOpen, setListOpen] = useState(true);
   const [trace, setTrace] = useState(null);
@@ -722,20 +757,6 @@ export default function AgentView({ focusId, onFocusHandled }) {
     setSelectedId(id);
     setListOpen(false);
   }
-
-  const load = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/v1/inspections?limit=50`);
-      if (!res.ok) return;
-      const data = await res.json();
-      const mh = (Array.isArray(data) ? data : []).filter(r => r.risk_level === "Medium" || r.risk_level === "High");
-      setRows(mh);
-      // keep the current selection if it is still in the list; never auto-select
-      setSelectedId(prev => (prev && mh.some(r => r.id === prev) ? prev : null));
-    } catch { /* keep last */ }
-  }, []);
-
-  useEffect(() => { load(); }, [load, tick]);
 
   // toast "분석 보러 가기" hands us the case to open directly
   useEffect(() => {
@@ -784,8 +805,12 @@ export default function AgentView({ focusId, onFocusHandled }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decision: decision || "approved", reviewer: "operator", note: label }),
       });
-      if (res.ok) setReviewResult(await res.json());
-      await load();
+      if (res.ok) {
+        const data = await res.json();
+        setReviewResult(data);
+        // reflect the decision on the queued row in place (no bulk refetch)
+        setRiskQueue(q => q.map(r => (r.id === selectedId ? { ...r, ...data } : r)));
+      }
     } finally {
       setBusy(false);
     }

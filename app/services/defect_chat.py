@@ -4,7 +4,9 @@ Defect chat — agentic LLM Q&A about a single inspection.
 The chat is grounded in the inspection's evidence but is no longer single-shot:
 it can call read-only tools (equipment history, metrology trend, MLOps state,
 RAG search, multimodal wafer comparison) to answer questions whose answer is not
-in the static evidence ("이 설비 최근에도 이랬어?").
+in the static evidence ("이 설비 최근에도 이랬어?"), and one write tool
+(save_case_to_knowledge) so an engineer's stated action/conclusion gets recorded
+back into the RAG corpus.
 
 Two entry points share one loop:
 - ``stream_chat_about_inspection`` yields event dicts for SSE (tool_call /
@@ -27,13 +29,17 @@ _MAX_HISTORY = 10
 _MAX_ITERATIONS = 4
 _CHUNK_SIZE = 3  # chars per streamed token-ish chunk
 
-# Read-only tools the chat agent may call. Names map into tools.TOOL_REGISTRY.
+# Tools the chat agent may call. Mostly read-only lookups, plus one write tool:
+# save_case_to_knowledge, so when the engineer states an action/conclusion in chat
+# the agent can record it back into the RAG corpus (grounded with this inspection's
+# context — see _chat_tool_registry).
 _CHAT_TOOL_NAMES = (
     "search_similar_cases",
     "get_equipment_history",
     "get_metrology_trend",
     "get_mlops_state",
     "compare_with_past_wafer",
+    "save_case_to_knowledge",
 )
 
 _SYSTEM_PROMPT = (
@@ -54,7 +60,15 @@ _SYSTEM_PROMPT = (
     "5. 'ETCH-02에서 최근에도 이랬어?'는 get_equipment_history로, '계속 밀리는 거야?'는 "
     "get_metrology_trend로 직접 확인하고, 결과를 근거로 인용합니다 (예: '24h 내 동일 결함 5회 → 반복성').\n"
     "6. 답변은 3~6문장 또는 번호 목록으로 간결하게. 질문이 모호해도 되묻지 말고, 이 검사에서 가장 "
-    "합리적인 다음 행동을 제안합니다."
+    "합리적인 다음 행동을 제안합니다.\n"
+    "7. 이 검사의 결함 유형·설비·계측값·추정 원인·권장 액션·에이전트 판단은 아래 evidence와 "
+    "'에이전트 분석'에 이미 모두 주어져 있습니다. 절대 '구체적인 정보가 필요하다', '어떤 결함/설비인지 "
+    "알려달라', '세부 사항을 제공해 달라'고 되묻지 마세요. 주어진 내용만으로 바로 구체적으로 답합니다.\n"
+    "8. 엔지니어가 자신이 취할 조치나 결론을 밝히면(예: 'EBR 노즐 압력 점검하고 교체할게', "
+    "'이건 오탐으로 종결', '설비 점검 의뢰함') 반드시 save_case_to_knowledge 도구를 호출해 그 조치를 "
+    "RAG 지식베이스에 저장하세요. title은 '결함유형 대응 — 설비', summary는 현재 상황 요약, action은 "
+    "엔지니어가 말한 조치 내용으로 채웁니다. 저장 후 '○○ 조치를 지식베이스에 기록했습니다'라고 한 줄로 "
+    "알려, 이후 유사 검사에서 검색되도록 합니다. 단순 질문·조회에는 저장하지 말고, 실제 조치/결론일 때만 저장합니다."
 )
 
 
@@ -108,13 +122,32 @@ def _chat_tool_schemas() -> list[dict]:
         return []
 
 
-def _chat_tool_registry() -> dict:
+def _chat_tool_registry(record: dict) -> dict:
     try:
         from app.services.tools import TOOL_REGISTRY  # noqa: PLC0415
-
-        return {n: TOOL_REGISTRY[n] for n in _CHAT_TOOL_NAMES if n in TOOL_REGISTRY}
     except ImportError:
         return {}
+    registry = {n: TOOL_REGISTRY[n] for n in _CHAT_TOOL_NAMES if n in TOOL_REGISTRY}
+
+    # Bind save_case_to_knowledge to THIS inspection: the LLM supplies the
+    # title/summary/action, we attach the inspection context as metadata and
+    # default the defect type, so a chat-recorded case is traceable.
+    base_save = registry.get("save_case_to_knowledge")
+    if base_save is not None:
+        def _save(title, summary, action, defect_type=None, **_):
+            return base_save(
+                title=title,
+                summary=summary,
+                action=action,
+                defect_type=defect_type or record.get("defect_type"),
+                metadata={
+                    "inspection_id": record.get("id"),
+                    "equipment_id": record.get("equipment_id"),
+                    "source": "engineer_chat",
+                },
+            )
+        registry["save_case_to_knowledge"] = _save
+    return registry
 
 
 def _summarize_tool_result(name: str, result: object) -> str:
@@ -144,6 +177,10 @@ def _summarize_tool_result(name: str, result: object) -> str:
         return "웨이퍼 이미지 비교 완료"
     if name == "search_similar_cases":
         return "유사 사례 검색 완료"
+    if name == "save_case_to_knowledge":
+        if result.get("ok"):
+            return f"지식베이스 저장 완료 ({result.get('doc_id', 'saved')})"
+        return f"저장 실패: {result.get('error', '알 수 없음')}"
     return "완료"
 
 
@@ -187,11 +224,11 @@ def stream_chat_about_inspection(
         yield {"type": "done", "reply": msg, "agent_mode": "stub", "tool_calls": []}
         return
 
-    # Attach the wafer image only on the opening message of a conversation. Re-sending
-    # it on every follow-up makes the model re-anchor on "describe this image" and
-    # answer generically (e.g. "이 이미지는 ...") instead of staying on the case.
-    is_opening_turn = not (history or [])
-    image_urls = [u for u in [record.get("overlay_url"), record.get("roi_url")] if u] if is_opening_turn else []
+    # Do NOT attach the wafer image to the chat. The multimodal model anchors on the
+    # image and answers generically ("제공된 이미지에 대한 정보가 더 필요합니다") instead of
+    # using the rich evidence below — exactly the failure we want to avoid. Image-level
+    # analysis remains available through tools (inspect_image / compare_with_past_wafer).
+    image_urls: list[str] = []
 
     system_content = _SYSTEM_PROMPT + "\n\n[검사 Evidence]\n" + _evidence_context(record, trace)
     if extra_context and extra_context.strip():
@@ -207,7 +244,7 @@ def stream_chat_about_inspection(
     messages.append({"role": "user", "content": message})
 
     tools_schemas = _chat_tool_schemas()
-    registry = _chat_tool_registry()
+    registry = _chat_tool_registry(record)
     tool_calls_log: list[dict] = []
 
     for iteration in range(_MAX_ITERATIONS):

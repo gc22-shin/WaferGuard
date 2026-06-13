@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
 import logging
 import os
@@ -35,6 +36,39 @@ def _run_agent_background(evidence: dict) -> None:
         logger.error(
             "Background agent run failed for %s: %s", evidence.get("inspection_id"), exc
         )
+
+
+# Serialize background agent runs through a single worker. The live stream can
+# fire an inspection every couple of seconds; firing a concurrent LLM agent run
+# for each one bursts the API rate limit (HTTP 429). One-at-a-time keeps the
+# request rate gentle. A small bounded backlog drops excess rather than piling up.
+_AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent")
+_AGENT_MAX_PENDING = 4
+_AGENT_PENDING = 0
+_AGENT_PENDING_LOCK = threading.Lock()
+
+
+def _submit_agent(evidence: dict) -> bool:
+    global _AGENT_PENDING  # noqa: PLW0603
+    with _AGENT_PENDING_LOCK:
+        if _AGENT_PENDING >= _AGENT_MAX_PENDING:
+            logger.warning(
+                "Agent backlog full (%d pending); skipping background run for %s",
+                _AGENT_PENDING, evidence.get("inspection_id"),
+            )
+            return False
+        _AGENT_PENDING += 1
+
+    def _task() -> None:
+        global _AGENT_PENDING  # noqa: PLW0603
+        try:
+            _run_agent_background(evidence)
+        finally:
+            with _AGENT_PENDING_LOCK:
+                _AGENT_PENDING -= 1
+
+    _AGENT_EXECUTOR.submit(_task)
+    return True
 
 
 def run_inspection(request: InspectRequest) -> dict[str, object]:
@@ -118,10 +152,10 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
         if llm_active:
             # LLM analysis takes seconds — run it in the background so the
             # inspect response (and the live stream) returns immediately.
-            # The agent persists its trace, which the Agent tab polls for.
-            threading.Thread(
-                target=_run_agent_background, args=(evidence,), daemon=True
-            ).start()
+            # Serialized through a single worker so concurrent stream inspections
+            # don't burst the LLM rate limit. The agent persists its trace, which
+            # the Agent tab polls for.
+            _submit_agent(evidence)
             agent_result = {
                 "final_action": None,
                 "tool_calls": [],

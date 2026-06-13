@@ -63,6 +63,9 @@ export function SettingsProvider({ children }) {
   const [latest, setLatest] = useState(null);
   const [tick, setTick] = useState(0);
   const [inFlight, setInFlight] = useState(false);
+  // session-scoped risk queue: filled live as Medium/High inspections stream in
+  // (NOT from a bulk DB fetch), so it starts empty on refresh
+  const [riskQueue, setRiskQueue] = useState([]);
   const counterRef = useRef(0);
   const settingsRef = useRef(settings);
   const inFlightRef = useRef(false);
@@ -115,6 +118,10 @@ export function SettingsProvider({ children }) {
       const data = await res.json();
       setLatest(data);
       setTick(t => t + 1);
+      // only actual Medium/High results enter the agent queue
+      if (data && (data.risk_level === "High" || data.risk_level === "Medium")) {
+        setRiskQueue(q => (q.some(r => r.id === data.id) ? q : [data, ...q].slice(0, 50)));
+      }
     } catch {
       // silently keep last
     } finally {
@@ -150,6 +157,8 @@ export function SettingsProvider({ children }) {
     tick,
     inFlight,
     runOnce,
+    riskQueue,
+    setRiskQueue,
   };
 
   return <SettingsCtx.Provider value={value}>{children}</SettingsCtx.Provider>;

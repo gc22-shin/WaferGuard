@@ -8,6 +8,7 @@ import AlertCenterView from "./AlertCenterView";
 import SettingsView    from "./SettingsView";
 import { SettingsProvider, useStream } from "./SettingsContext";
 import { MlopsAgentProvider } from "./MlopsAgentContext";
+import { DefectChatProvider } from "./DefectChatContext";
 
 const NAV = [
   { id: "inspect", icon: "layers",  label: "실시간 검사",    en: "Live Inspection", View: InspectionWorkspace },
@@ -201,7 +202,9 @@ export default function App() {
   return (
     <SettingsProvider>
       <MlopsAgentProvider>
-        <AppInner />
+        <DefectChatProvider>
+          <AppInner />
+        </DefectChatProvider>
       </MlopsAgentProvider>
     </SettingsProvider>
   );
