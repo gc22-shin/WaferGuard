@@ -9,3 +9,7 @@ frontend/.vite/
 .env
 .env.local
 .DS_Store
+LSWMD.pkl
+.claude/
+CLAUDE.md
+CONTEXT.md

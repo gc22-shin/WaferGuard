@@ -1,4 +1,4 @@
-# WaferGuard Agent Simulation
+# WaferGuard Agent Simulation.
 
 WaferGuard는 이미지 분류 정확도 개선 프로젝트가 아니라, 반도체 공정 이상 상황을 시뮬레이션하고 Agent가 근거를 모아 대응 action을 제안/수행하는 로컬 MVP다.
 
@@ -62,27 +62,111 @@ WaferGuard는 이미지 분류 정확도 개선 프로젝트가 아니라, 반�
 - `POST /api/v1/handoff/{id}/send`: Daily Report 전달 완료 기록
 - `GET /api/v1/copilot/ops`: 운영 Copilot 요약 조회
 
+## 사전 요구사항
+
+| 도구 | 최소 버전 | 확인 명령 |
+|------|-----------|-----------|
+| Conda | 임의 | `conda --version` |
+| Node.js | 18 이상 | `node --version` |
+| npm | 9 이상 | `npm --version` |
+| Git | 임의 | `git --version` |
+
+## 환경 구축
+
+### 저장소 클론
+
+```bash
+git clone https://github.com/arnold6444/WaferGuard.git
+cd WaferGuard
+```
+
+### Python 환경 (Conda)
+
+```bash
+conda create -n waferguard python=3.11 -y
+conda activate waferguard
+pip install -r requirements.txt
+```
+
+### 프론트엔드 의존성
+
+```bash
+cd frontend
+npm install
+cd ..
+```
+
+---
+
 ## 실행
 
-PowerShell에서 아래 명령을 실행한다.
+터미널 2개를 열어 백엔드와 프론트엔드를 각각 실행한다.
+
+### Windows (PowerShell) — 자동 실행
+
+venv 생성, 패키지 설치, 백엔드·프론트엔드 동시 기동을 자동으로 처리한다. 포트가 이미 사용 중이면 자동으로 다음 포트(5174, 8001…)를 사용하며 실제 주소는 `outputs/runtime-url.txt`에 저장된다.
 
 ```powershell
 .\start.ps1
 ```
 
-실행 후 접속 주소:
+종료는 PowerShell 창에서 `Ctrl+C`.
 
-- Dashboard: `start.ps1`이 출력하는 주소
-- API docs: `start.ps1`이 출력하는 주소 + `/docs`
-- Health: API 주소 + `/health`
-- 주소 파일: `outputs/runtime-url.txt`
+### macOS / Linux
 
-기본값은 Dashboard `http://127.0.0.1:5173`, API `http://127.0.0.1:8000`이다. 이미 사용 중인 포트가 있으면 자동으로 다음 포트를 사용한다.
+**터미널 1 — 백엔드**
+
+```bash
+conda activate waferguard
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+**터미널 2 — 프론트엔드**
+
+```bash
+cd frontend
+VITE_API_BASE_URL=http://127.0.0.1:8000 npm run dev
+```
+
+### 접속 주소
+
+```
+Dashboard : http://127.0.0.1:5173
+API docs  : http://127.0.0.1:8000/docs
+```
+
+백엔드 정상 기동 여부는 `http://127.0.0.1:8000/health` 에서 `{"status":"ok"}` 로 확인한다.
+
+---
+
+### 처음 실행 시 생성되는 디렉터리
+
+```
+outputs/
+  images/          # 생성된 wafer map, Grad-CAM, ROI 이미지
+  waferguard.db    # SQLite 검사 이력
+  runtime-url.txt  # 실행 중인 주소 목록
+```
+
+`outputs/` 는 `.gitignore`에 포함되어 있으며 앱 기동 시 자동 생성된다.
 
 ## 검증
 
-```powershell
-.\.venv\Scripts\python.exe scripts\smoke_test.py
+백엔드가 실행 중인 상태에서 아래 명령으로 주요 엔드포인트를 한 번에 테스트할 수 있다.
+
+```bash
+# macOS/Linux
+conda activate waferguard
+python scripts/smoke_test.py
+
+# Windows
+conda activate waferguard
+python scripts\smoke_test.py
+```
+
+프론트엔드 빌드 검증:
+
+```bash
 cd frontend
 npm run build
 ```

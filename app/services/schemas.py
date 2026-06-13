@@ -47,6 +47,19 @@ class InspectRequest(BaseModel):
     defect_count: int | None = Field(default=None, ge=0, le=1000000)
     yield_proxy: float = Field(default=0.982, ge=0, le=1)
     operator_note: str = Field(default="", max_length=500)
+    use_llm: bool = True
+
+
+class InspectionChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    history: list[dict[str, str]] = Field(default_factory=list, max_length=20)
+    use_llm: bool = True
+    # on-screen AI recommendation (probable causes / next actions) the user is viewing
+    extra_context: str = Field(default="", max_length=2000)
+
+
+class AgentStreamRequest(BaseModel):
+    use_llm: bool = True
 
 
 class ReviewRequest(BaseModel):
@@ -62,6 +75,28 @@ class DriftRequest(BaseModel):
 
 class RetrainRequest(BaseModel):
     trigger_type: Literal["scheduled", "drift", "performance", "manual"] = "manual"
+
+
+class MlopsAgentRequest(BaseModel):
+    line_id: str = Field(default="ALL", min_length=2, max_length=64)
+    use_llm: bool = True
+    # autonomy mode for the retrain trigger:
+    #  auto = execute now, approval = queue for human approval, notify = alert only
+    autonomy: Literal["auto", "approval", "notify"] = "approval"
+
+
+class ApprovalResolveRequest(BaseModel):
+    # optional engineer comment captured at approve/reject time; fed back to the
+    # agent as context so it learns from the human's reasoning.
+    comment: str = Field(default="", max_length=500)
+
+
+class MlopsChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    history: list[dict[str, str]] = Field(default_factory=list, max_length=20)
+    use_llm: bool = True
+    # the on-screen monitoring log the engineer is looking at (optional)
+    extra_context: str = Field(default="", max_length=4000)
 
 
 class PromoteRequest(BaseModel):

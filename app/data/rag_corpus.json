@@ -1,0 +1,661 @@
+[
+  {
+    "id": "case_center_001",
+    "content": "CMP 중심부 압력 편차: 중심부 결함이 반복될 때 패드 마모와 슬러리 공급 안정성을 먼저 확인했다. CMP pad conditioning 기록과 중심부 두께 편차를 함께 확인한다.",
+    "defect_type": "center",
+    "metadata": {
+      "source": "case_library",
+      "title": "CMP 중심부 압력 편차",
+      "action": "CMP pad conditioning 기록과 중심부 두께 편차를 함께 확인"
+    }
+  },
+  {
+    "id": "case_center_002",
+    "content": "포토 공정 focus drift: 중앙 영역에 국소 결함이 집중되며 focus offset 보정 후 정상화됐다. 노광 focus/exposure 로그와 최근 레시피 변경 이력을 비교한다.",
+    "defect_type": "center",
+    "metadata": {
+      "source": "case_library",
+      "title": "포토 공정 focus drift",
+      "action": "노광 focus/exposure 로그와 최근 레시피 변경 이력 비교"
+    }
+  },
+  {
+    "id": "case_donut_001",
+    "content": "증착 균일도 링 패턴: 챔버 온도 편차로 링 형태 불량이 발생했고 showerhead 세정 후 감소했다. 온도 zone 로그와 showerhead PM 주기를 확인한다.",
+    "defect_type": "donut",
+    "metadata": {
+      "source": "case_library",
+      "title": "증착 균일도 링 패턴",
+      "action": "온도 zone 로그와 showerhead PM 주기 확인"
+    }
+  },
+  {
+    "id": "case_edge_loc_001",
+    "content": "엣지 핸들링 접촉 문제: 로봇 암 접촉 위치와 결함 위치가 겹쳤고 end-effector 점검 후 개선됐다. 웨이퍼 이송 로그와 edge grip mark를 검사한다.",
+    "defect_type": "edge_loc",
+    "metadata": {
+      "source": "case_library",
+      "title": "엣지 핸들링 접촉 문제",
+      "action": "웨이퍼 이송 로그와 edge grip mark 검사"
+    }
+  },
+  {
+    "id": "case_edge_ring_001",
+    "content": "Edge bead removal 불안정: 엣지 링 불량이 EBR nozzle pressure 변화와 동시 발생했다. EBR pressure, nozzle 상태, edge exclusion 설정을 점검한다.",
+    "defect_type": "edge_ring",
+    "metadata": {
+      "source": "case_library",
+      "title": "Edge bead removal 불안정",
+      "action": "EBR pressure, nozzle 상태, edge exclusion 설정 점검"
+    }
+  },
+  {
+    "id": "case_loc_001",
+    "content": "파티클 국소 오염: 특정 tool chamber에서만 국소 결함이 반복되어 chamber clean 후 감소했다. 동일 설비 lot history와 particle counter 추이를 확인한다.",
+    "defect_type": "loc",
+    "metadata": {
+      "source": "case_library",
+      "title": "파티클 국소 오염",
+      "action": "동일 설비 lot history와 particle counter 추이 확인"
+    }
+  },
+  {
+    "id": "case_random_001",
+    "content": "클린룸 일시 오염 이벤트: 무작위 결함 증가가 필터 교체 직후 발생했고 HVAC 안정화 후 회복됐다. 클린룸 particle trend와 해당 시간대 작업 이력을 확인한다.",
+    "defect_type": "random",
+    "metadata": {
+      "source": "case_library",
+      "title": "클린룸 일시 오염 이벤트",
+      "action": "클린룸 particle trend와 해당 시간대 작업 이력 확인"
+    }
+  },
+  {
+    "id": "case_scratch_001",
+    "content": "이송 구간 스크래치: 긴 선형 결함이 cassette unload 이후부터 관찰되어 로봇 경로를 교정했다. load port, robot arm, cassette slot 물리 접촉 여부를 확인한다.",
+    "defect_type": "scratch",
+    "metadata": {
+      "source": "case_library",
+      "title": "이송 구간 스크래치",
+      "action": "load port, robot arm, cassette slot 물리 접촉 여부 확인"
+    }
+  },
+  {
+    "id": "case_none_001",
+    "content": "정상 패턴 기준선: 정상 웨이퍼는 라인별 baseline 분포와 함께 보관해 드리프트 비교 기준으로 사용한다. 정상 lot의 공정 조건을 baseline으로 저장한다.",
+    "defect_type": "none",
+    "metadata": {
+      "source": "case_library",
+      "title": "정상 패턴 기준선",
+      "action": "정상 lot의 공정 조건을 baseline으로 저장"
+    }
+  },
+  {
+    "id": "eval_rag001",
+    "content": "Edge-Ring defect 증가 시 우선 확인 항목: edge exclusion 설정, EBR nozzle pressure, CMP edge 조건, 동일 설비 trend, PM 이력을 확인한다. 정상 통과 대신 검토 큐로 올려 엔지니어가 원인을 확정하도록 한다.",
+    "defect_type": "edge_ring",
+    "metadata": {
+      "source": "eval_set",
+      "eval_id": "RAG-001",
+      "required_evidence": [
+        "Edge-Ring SOP",
+        "Equipment trend",
+        "PM history"
+      ]
+    }
+  },
+  {
+    "id": "eval_rag002",
+    "content": "Scratch를 None으로 놓쳤을 때의 위험: 물리적 damage가 후속 공정으로 전파되어 rework 불가 또는 scrap 비용 증가로 이어진다. 이미지 기반 1차 판정에서 놓치면 2차 확인이 어려워 critical miss 정책으로 별도 threshold를 운영해야 한다.",
+    "defect_type": "scratch",
+    "metadata": {
+      "source": "eval_set",
+      "eval_id": "RAG-002",
+      "required_evidence": [
+        "Scratch SOP",
+        "Critical miss policy"
+      ]
+    }
+  },
+  {
+    "id": "eval_rag003",
+    "content": "Near-full defect를 Random으로 예측 시 운영 리스크: lot 단위 recipe mismatch나 chamber event를 작은 particle 산포로 오해할 수 있다. recipe 변경 이력, override log, lot hold 여부를 즉시 확인하고 영향 lot 범위를 파악해야 한다.",
+    "defect_type": "near_full",
+    "metadata": {
+      "source": "eval_set",
+      "eval_id": "RAG-003",
+      "required_evidence": [
+        "Near-full SOP",
+        "Recipe checklist"
+      ]
+    }
+  },
+  {
+    "id": "eval_rag004",
+    "content": "WM-811K None class 불균형과 평가 지표: None class 비중이 크면 accuracy가 높아도 minority defect recall이 낮을 수 있다. macro-F1, critical defect recall, false negative rate를 별도 KPI로 관리해야 한다.",
+    "defect_type": "none",
+    "metadata": {
+      "source": "eval_set",
+      "eval_id": "RAG-004",
+      "required_evidence": [
+        "Evaluation policy",
+        "Class imbalance note"
+      ]
+    }
+  },
+  {
+    "id": "eval_rag005",
+    "content": "Grad-CAM 근거 이상 감지: Edge-Ring 예측에서 Grad-CAM이 center noise에 집중하면 모델 근거가 약한 것으로 판단한다. 원본 wafer map, edge trend, metrology check를 추가로 확인하고 자동 승인 대신 human review로 올려야 한다.",
+    "defect_type": "edge_ring",
+    "metadata": {
+      "source": "eval_set",
+      "eval_id": "RAG-005",
+      "required_evidence": [
+        "Grad-CAM check",
+        "Edge-Ring SOP"
+      ]
+    }
+  },
+  {
+    "id": "eval_rag006",
+    "content": "Drift 감지 후 모델 교체 절차: drift score만으로 즉시 production 교체는 금지한다. line/equipment별 defect mix, validation slice, critical recall을 확인하고 staging 모델 검증 후 승급 또는 rollback 결정을 엔지니어가 내려야 한다.",
+    "defect_type": "none",
+    "metadata": {
+      "source": "eval_set",
+      "eval_id": "RAG-006",
+      "required_evidence": [
+        "Drift policy",
+        "Model promotion checklist"
+      ]
+    }
+  },
+  {
+    "id": "eval_rag007",
+    "content": "Inspection과 metrology의 차이: inspection은 이상 유무와 위치를 탐지하는 단계이고, metrology는 CD, overlay, film thickness 등의 수치로 공정 조건을 확인하는 단계다. 두 단계를 통합해야 추가 확인 항목을 구체화할 수 있다.",
+    "defect_type": "none",
+    "metadata": {
+      "source": "eval_set",
+      "eval_id": "RAG-007",
+      "required_evidence": [
+        "Inspection note",
+        "Metrology note"
+      ]
+    }
+  },
+  {
+    "id": "eval_rag008",
+    "content": "AI defect 판단 표현 기준: 공개/synthetic 데이터 기반 MVP에서는 원인 진단이 아니라 가능 원인 후보와 추가 확인 항목 제시로 표현한다. 실제 fab root cause 확정 표현은 엔지니어 검토 이후에만 사용할 수 있다.",
+    "defect_type": "none",
+    "metadata": {
+      "source": "eval_set",
+      "eval_id": "RAG-008",
+      "required_evidence": [
+        "Source boundary",
+        "Human review policy"
+      ]
+    }
+  },
+  {
+    "id": "eval_rag009",
+    "content": "Critical class 별도 threshold 운영 이유: Scratch, Edge-Ring, Near-full 같은 결함은 놓쳤을 때 scrap 비용이 크다. confidence가 낮아도 review queue로 올려 false negative 비용을 줄이는 비대칭 threshold 정책이 필요하다.",
+    "defect_type": "scratch",
+    "metadata": {
+      "source": "eval_set",
+      "eval_id": "RAG-009",
+      "required_evidence": [
+        "Critical miss policy",
+        "Threshold policy"
+      ]
+    }
+  },
+  {
+    "id": "eval_rag010",
+    "content": "Daily Report의 역할: AI 판정이 실제 현장 조치와 다음 근무자 확인으로 이어졌는지 남기는 운영 workflow 증거다. 단순 보고서가 아니라 AI 판단과 엔지니어 결정 이력이 연결된 audit trail 역할을 한다.",
+    "defect_type": "none",
+    "metadata": {
+      "source": "eval_set",
+      "eval_id": "RAG-010",
+      "required_evidence": [
+        "Handoff policy",
+        "Human decision trace"
+      ]
+    }
+  },
+  {
+    "id": "eval_rag011",
+    "content": "Metrology CSV 연계 효과: 이미지 판정만으로는 부족하고 CD, overlay, film thickness, defect count 같은 수치 신호와 연결해야 추가 확인 항목을 구체화할 수 있다. metrology 이상치가 이미지 결함과 동시에 발생하면 위험도를 높여 판단한다.",
+    "defect_type": "none",
+    "metadata": {
+      "source": "eval_set",
+      "eval_id": "RAG-011",
+      "required_evidence": [
+        "Metrology note",
+        "Action Card schema"
+      ]
+    }
+  },
+  {
+    "id": "eval_rag012",
+    "content": "포트폴리오에서 fixture 숫자 표현 방법: 실제 학습 성능이 아니라 운영 리스크 평가 화면과 API 구조를 검증하기 위한 fixture임을 명시해야 한다. fixture accuracy를 실제 검증 성능으로 발표하면 안 된다.",
+    "defect_type": "none",
+    "metadata": {
+      "source": "eval_set",
+      "eval_id": "RAG-012",
+      "required_evidence": [
+        "Source boundary",
+        "Evaluation fixture note"
+      ]
+    }
+  },
+  {
+    "id": "sop_center_001",
+    "content": "Center 결함 SOP (Probe Step): Center 결함 발생 시 probe step에서 center pin pressure와 chuck flatness를 먼저 점검한다. chuck 편심 또는 pin 마모가 주요 원인이며 PM 주기를 벗어난 경우 즉시 교정 후 재검사한다. 동일 lot 내 다른 웨이퍼 center 패턴을 비교해 설비 특성인지 공정 이변인지 구분한다.",
+    "defect_type": "center",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "center",
+      "sop_variant": "probe_step"
+    }
+  },
+  {
+    "id": "sop_center_002",
+    "content": "Center 결함 SOP (Recipe Parameter): Center 결함과 연관된 레시피 파라미터는 center zone 온도, 슬러리 flow rate, 노광 center focus offset이다. 레시피 변경 이력에서 최근 48시간 이내 변경 사항을 확인하고 이전 파라미터와 비교한다. 허용 범위를 벗어난 파라미터는 즉시 롤백하고 엔지니어에게 보고한다.",
+    "defect_type": "center",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "center",
+      "sop_variant": "recipe_parameter"
+    }
+  },
+  {
+    "id": "sop_donut_001",
+    "content": "Donut 결함 SOP (Probe Step): Donut 패턴 결함 발생 시 CVD/ALD 챔버의 edge ring 상태와 showerhead 오염 여부를 점검한다. probe step에서 ring 형태 전기 특성 이상이 확인되면 해당 챔버를 격리하고 showerhead 세정 PM을 즉시 시행한다. 세정 후 모니터 웨이퍼로 챔버 균일도를 재확인한다.",
+    "defect_type": "donut",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "donut",
+      "sop_variant": "probe_step"
+    }
+  },
+  {
+    "id": "sop_donut_002",
+    "content": "Donut 결함 SOP (Recipe Parameter): Donut 결함과 연관된 파라미터는 챔버 pressure, 가스 flow 비율, edge zone 히터 온도다. 허용 범위는 pressure ±2%, gas flow ±5%, 온도 ±3°C이며 범위를 벗어나면 lot을 hold하고 챔버 점검 로그를 남긴다. 최근 PM 이력과 교차 확인해 주기 초과 여부를 판단한다.",
+    "defect_type": "donut",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "donut",
+      "sop_variant": "recipe_parameter"
+    }
+  },
+  {
+    "id": "sop_edge_loc_001",
+    "content": "Edge-Loc 결함 SOP (Probe Step): Edge-Loc 결함 발생 시 웨이퍼 edge 10mm 이내 probe 접촉 영역을 먼저 확인한다. edge grip mark와 probe needle 위치가 일치하면 end-effector 교정 또는 교체를 고려한다. 로봇 이송 로그에서 edge 접촉 이상 이벤트를 검색해 동일 시간대 다른 웨이퍼 손상 여부도 확인한다.",
+    "defect_type": "edge_loc",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "edge_loc",
+      "sop_variant": "probe_step"
+    }
+  },
+  {
+    "id": "sop_edge_loc_002",
+    "content": "Edge-Loc 결함 SOP (Equipment Lookup): Edge-Loc 결함이 특정 설비에서만 반복될 경우 해당 load port와 robot arm 설비 이력을 조회한다. 설비 MTBF와 마지막 PM 날짜를 확인하고 PM 주기를 초과했으면 즉시 점검을 예약한다. 동일 설비를 통과한 직전 lot의 결함 분포를 비교해 발생 시점을 특정한다.",
+    "defect_type": "edge_loc",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "edge_loc",
+      "sop_variant": "equipment_lookup"
+    }
+  },
+  {
+    "id": "sop_edge_ring_001",
+    "content": "Edge-Ring 결함 SOP (Probe Step): Edge-Ring 결함 발생 시 probe step에서 웨이퍼 외곽 5mm 링 영역의 저항값 편차를 확인한다. EBR nozzle pressure 이상이나 edge exclusion 범위 설정 오류가 주요 원인이다. 동일 레시피로 처리한 직전 lot와 ring 폭/위치를 비교해 공정 이변 여부를 판단한다.",
+    "defect_type": "edge_ring",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "edge_ring",
+      "sop_variant": "probe_step"
+    }
+  },
+  {
+    "id": "sop_edge_ring_002",
+    "content": "Edge-Ring 결함 SOP (Recipe Parameter): Edge-Ring 결함 관련 레시피 파라미터로 EBR nozzle pressure(허용 ±3%), edge exclusion 거리(허용 ±0.5mm), spin speed(허용 ±50rpm)를 확인한다. 파라미터 이상 시 해당 lot을 hold하고 레시피를 직전 정상 버전으로 롤백한다. 설비 담당 엔지니어에게 즉시 보고하고 원인 분석 전까지 신규 lot 투입을 중단한다.",
+    "defect_type": "edge_ring",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "edge_ring",
+      "sop_variant": "recipe_parameter"
+    }
+  },
+  {
+    "id": "sop_loc_001",
+    "content": "Loc 결함 SOP (Probe Step): 국소 결함 발생 시 probe step에서 결함 좌표와 설비 내부 구조물 위치를 대조한다. 특정 chamber port, gas inlet, 히터 구역과 결함 위치가 일치하면 해당 구조물 오염이나 손상을 의심한다. 동일 설비의 직전 5 lot 결함 좌표와 비교해 재현성을 확인한다.",
+    "defect_type": "loc",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "loc",
+      "sop_variant": "probe_step"
+    }
+  },
+  {
+    "id": "sop_loc_002",
+    "content": "Loc 결함 SOP (Equipment Lookup): Loc 결함이 반복되는 설비의 chamber clean 이력과 particle counter 데이터를 조회한다. particle count가 허용 상한(class 1000 기준)을 초과한 시점이 결함 발생과 일치하면 즉시 chamber wet clean을 시행한다. clean 후 dummy 웨이퍼로 particle 수준을 확인하고 정상화 후 생산을 재개한다.",
+    "defect_type": "loc",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "loc",
+      "sop_variant": "equipment_lookup"
+    }
+  },
+  {
+    "id": "sop_near_full_001",
+    "content": "Near-full 결함 SOP (Probe Step): Near-full 결함 발생 시 해당 lot 전체를 즉시 hold하고 probe step을 중단한다. lot start recipe, chamber recipe, operator override 로그를 순서대로 확인해 잘못된 recipe 적용 여부를 파악한다. 영향 범위가 lot 전체에 걸치므로 스크랩 또는 rework 가능성을 엔지니어가 직접 판정해야 한다.",
+    "defect_type": "near_full",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "near_full",
+      "sop_variant": "probe_step"
+    }
+  },
+  {
+    "id": "sop_near_full_002",
+    "content": "Near-full 결함 SOP (Recipe Parameter): Near-full 결함과 연관된 주요 파라미터는 recipe ID 일치 여부, 챔버 chamber ID 매핑, operator 승인 이력이다. recipe mismatch가 확인되면 해당 lot과 동시에 처리된 모든 lot의 recipe 이력을 소급 확인한다. 재발 방지를 위해 recipe lock 정책과 dual-check 절차를 강화한다.",
+    "defect_type": "near_full",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "near_full",
+      "sop_variant": "recipe_parameter"
+    }
+  },
+  {
+    "id": "sop_random_001",
+    "content": "Random 결함 SOP (Probe Step): Random 결함 증가 시 probe step에서 결함 분포가 특정 패턴 없이 산포하는지 확인한다. 패턴이 없으면 클린룸 환경 이벤트(필터 교체, 작업자 입출입, HVAC 이상)를 먼저 조사한다. 해당 시간대 클린룸 particle trend와 작업 이력을 교차 확인해 원인 시점을 좁힌다.",
+    "defect_type": "random",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "random",
+      "sop_variant": "probe_step"
+    }
+  },
+  {
+    "id": "sop_random_002",
+    "content": "Random 결함 SOP (Equipment Lookup): Random 결함이 특정 설비에 집중되면 설비 내부 particle 발생원을 의심한다. 설비 vibration log, seal 상태, 내부 기구부 마모 이력을 조회하고 particle counter 측정값이 기준치를 초과하면 설비를 격리한다. 대체 설비로 lot을 재배정하고 해당 설비는 PM 완료 후 재가동한다.",
+    "defect_type": "random",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "random",
+      "sop_variant": "equipment_lookup"
+    }
+  },
+  {
+    "id": "sop_scratch_001",
+    "content": "Scratch 결함 SOP (Probe Step): Scratch 결함 발생 시 probe step에서 선형 패턴의 방향과 길이를 측정해 이송 경로와 대조한다. cassette slot, load port, robot arm 접촉 순서와 scratch 방향이 일치하면 해당 구간 물리 접촉 문제로 판단한다. 같은 cassette의 다른 웨이퍼도 검사해 batch 손상 여부를 확인한다.",
+    "defect_type": "scratch",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "scratch",
+      "sop_variant": "probe_step"
+    }
+  },
+  {
+    "id": "sop_scratch_002",
+    "content": "Scratch 결함 SOP (Equipment Lookup): Scratch 결함이 반복되는 설비의 robot arm end-effector, cassette slot guide, chuck pin 상태를 점검한다. 마모나 이물질이 발견되면 해당 부품을 교체하고 dummy 웨이퍼로 이송 경로 검증 테스트를 수행한다. 설비 이력에서 동일 부품 교체 후 개선됐던 사례를 검색해 교체 우선순위를 결정한다.",
+    "defect_type": "scratch",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "scratch",
+      "sop_variant": "equipment_lookup"
+    }
+  },
+  {
+    "id": "sop_none_001",
+    "content": "None(정상) SOP (Probe Step): 정상 판정 웨이퍼도 probe step에서 baseline 분포와 비교해 경계값 근처 항목은 trending 관리한다. 정상 범위 내에서도 특정 좌표에 약한 신호가 반복되면 early warning으로 기록하고 다음 lot과 비교한다. baseline 업데이트는 50 lot 단위로 rolling average를 사용한다.",
+    "defect_type": "none",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "none",
+      "sop_variant": "probe_step"
+    }
+  },
+  {
+    "id": "sop_none_002",
+    "content": "None(정상) SOP (Recipe Parameter): 정상 웨이퍼 lot의 공정 파라미터는 baseline으로 저장해 드리프트 비교 기준으로 활용한다. 파라미터가 허용 범위 내에 있어도 trend가 단방향으로 3회 이상 연속으로 벗어나면 shift 엔지니어에게 보고한다. 정상 lot baseline은 model drift 감지에도 reference로 사용된다.",
+    "defect_type": "none",
+    "metadata": {
+      "source": "sop",
+      "sop_class": "none",
+      "sop_variant": "recipe_parameter"
+    }
+  },
+  {
+    "id": "near_miss_001",
+    "content": "Near-miss 사례: ETCH-02 설비에서 Edge-Ring 결함이 신뢰도 0.68로 낮게 판정됐다. 엔지니어가 critical class threshold 정책에 따라 review queue로 올려 확인한 결과 EBR nozzle clog가 발견됐고 해당 lot 15장의 scrap을 방지했다. 자동 승인 기준을 낮췄다면 scrap 손실이 발생했을 사례다.",
+    "defect_type": "edge_ring",
+    "metadata": {
+      "source": "near_miss",
+      "near_miss_id": "NM-001",
+      "outcome": "scrap_prevented"
+    }
+  },
+  {
+    "id": "near_miss_002",
+    "content": "Near-miss 사례: CVD-04 설비에서 Donut 결함이 3 lot 연속으로 Medium risk로 자동 통과됐다. 4번째 lot에서 High risk가 나와 엔지니어가 소급 확인하니 showerhead 세정 주기가 200 lot을 초과한 상태였다. 연속 동일 결함 패턴 감지 규칙의 필요성을 보여준 사례다.",
+    "defect_type": "donut",
+    "metadata": {
+      "source": "near_miss",
+      "near_miss_id": "NM-002",
+      "outcome": "pm_overdue_detected"
+    }
+  },
+  {
+    "id": "near_miss_003",
+    "content": "Near-miss 사례: LITHO-03에서 Center 결함이 발생했으나 Grad-CAM이 edge 영역에 집중해 Edge-Loc으로 오판될 뻔했다. 엔지니어가 Grad-CAM 근거와 실제 결함 좌표가 불일치함을 확인하고 수동으로 Center로 재분류했다. Grad-CAM 신뢰성 점검 루틴의 중요성을 보여준 사례다.",
+    "defect_type": "center",
+    "metadata": {
+      "source": "near_miss",
+      "near_miss_id": "NM-003",
+      "outcome": "misclassification_caught"
+    }
+  },
+  {
+    "id": "near_miss_004",
+    "content": "Near-miss 사례: Scratch 결함이 None으로 낮은 신뢰도로 통과될 뻔했으나 metrology CD 이상치가 함께 감지돼 자동으로 review queue에 올라갔다. 엔지니어 확인 결과 robot arm end-effector 파손이 확인됐고 해당 설비를 즉시 격리했다. metrology와 이미지 결함의 교차 검증이 critical miss를 방지한 사례다.",
+    "defect_type": "scratch",
+    "metadata": {
+      "source": "near_miss",
+      "near_miss_id": "NM-004",
+      "outcome": "equipment_failure_detected"
+    }
+  },
+  {
+    "id": "near_miss_005",
+    "content": "Near-miss 사례: Near-full 결함이 Random으로 예측됐고 자동 통과될 뻔했으나 defect count가 700을 초과해 High risk 임계값에 걸렸다. 이후 확인하니 recipe override 오류로 잘못된 etch 조건이 적용됐었다. defect count 기반 보조 규칙이 AI 오판을 보완한 사례다.",
+    "defect_type": "near_full",
+    "metadata": {
+      "source": "near_miss",
+      "near_miss_id": "NM-005",
+      "outcome": "recipe_error_caught"
+    }
+  },
+  {
+    "id": "near_miss_006",
+    "content": "Near-miss 사례: 클린룸 HVAC 필터 교체 직후 Random 결함이 급증했으나 작업자가 공정 이상이 아닌 환경 이벤트로 인식해 lot을 계속 투입했다. AI가 해당 시간대 particle trend와 결함 시작 시점을 연결해 엔지니어에게 경고를 보냈고 10 lot을 추가 손실 없이 hold했다. 시간대 상관 분석의 가치를 보여준 사례다.",
+    "defect_type": "random",
+    "metadata": {
+      "source": "near_miss",
+      "near_miss_id": "NM-006",
+      "outcome": "environmental_event_linked"
+    }
+  },
+  {
+    "id": "near_miss_007",
+    "content": "Near-miss 사례: Loc 결함이 특정 chamber에서만 반복됐으나 낮은 defect count로 Medium risk 자동 통과가 반복됐다. 설비 메모리 기능이 동일 chamber 반복 패턴을 감지해 엔지니어에게 알림을 보냈고 chamber 점검에서 gas injector 막힘이 발견됐다. 설비 특정 반복 패턴 감지의 중요성을 보여준 사례다.",
+    "defect_type": "loc",
+    "metadata": {
+      "source": "near_miss",
+      "near_miss_id": "NM-007",
+      "outcome": "repeated_pattern_detected"
+    }
+  },
+  {
+    "id": "near_miss_008",
+    "content": "Near-miss 사례: 모델 drift가 감지돼 자동 재학습이 트리거됐으나 candidate 모델의 Edge-Ring recall이 기존 모델보다 낮아 promotion이 거부됐다. 엔지니어가 수동으로 critical defect recall 기준을 검토해 기존 모델을 유지했다. drift score만으로 자동 교체하지 않는 승인 정책의 필요성을 확인한 사례다.",
+    "defect_type": "edge_ring",
+    "metadata": {
+      "source": "near_miss",
+      "near_miss_id": "NM-008",
+      "outcome": "model_rollback_justified"
+    }
+  },
+  {
+    "id": "near_miss_009",
+    "content": "Near-miss 사례: CMP-01에서 Edge-Ring과 Donut 결함이 동시에 발생했고 AI는 Edge-Ring으로 단일 판정했다. 엔지니어가 dual defect 가능성을 확인하기 위해 wafer map을 직접 검토해 두 패턴이 겹쳐 있음을 발견했다. 복합 결함 패턴 처리 능력 강화가 필요함을 보여준 사례다.",
+    "defect_type": "edge_ring",
+    "metadata": {
+      "source": "near_miss",
+      "near_miss_id": "NM-009",
+      "outcome": "dual_defect_identified"
+    }
+  },
+  {
+    "id": "near_miss_010",
+    "content": "Near-miss 사례: Daily Report 없이 교대가 이뤄진 후 다음 근무자가 review queue 3건을 인지하지 못하고 추가 lot을 투입했다. AI 자동 교대 리포트 기능이 도입된 후 review queue와 High risk 항목이 교대 시 자동으로 전달되어 동일 문제가 재발하지 않았다. handoff 표준화의 운영 가치를 확인한 사례다.",
+    "defect_type": "none",
+    "metadata": {
+      "source": "near_miss",
+      "near_miss_id": "NM-010",
+      "outcome": "handoff_gap_closed"
+    }
+  },
+  {
+    "id": "guide_center_001",
+    "content": "Center Defect Technical Remediation Guide. Symptom: defect signal concentrated in the central die region of the wafer map, often with a roughly circular footprint. Primary root causes: (a) CMP center over-polish from retainer-ring zone-1 pressure imbalance, pad center wear, or slurry center-feed deviation; (b) lithography focus/leveling drift placing best-focus off the wafer center; (c) chuck center vacuum leak or backside-gas center imbalance causing local non-flatness. Diagnostic steps: 1) compare center thickness/CD profile against the line baseline; 2) pull CMP head zone-1 pressure trend, pad conditioning log, and slurry flow/pressure; 3) review scanner focus, leveling, and any recent recipe change; 4) check ESC center vacuum and backside-gas zone balance. Remediation: 1) recalibrate head zone pressure and inspect retainer-ring wear; 2) shorten pad conditioning interval if center polish rate is elevated; 3) re-center scanner focus offset and re-validate; 4) repair center vacuum line or rebalance backside gas, then re-measure flatness. Escalation: if center defects persist across multiple lots on the same tool, hold the chamber and request a CMP/scanner PM. Always confirm the Grad-CAM focus overlaps the central die region before acting; if it does not, treat the classification as low-confidence and route to engineer review.",
+    "defect_type": "center",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Center Defect — Technical Remediation Guide",
+      "action": "Verify CMP head zone pressure and litho focus/leveling before re-running the center die region.",
+      "category": "CMP / Lithography"
+    }
+  },
+  {
+    "id": "guide_donut_001",
+    "content": "Donut (Ring-Pattern) Defect Technical Remediation Guide. Symptom: annular (ring-shaped) defect band at a fixed radius, indicating radial process non-uniformity rather than a point source. Primary root causes: (a) chamber heater zone temperature deviation or thermocouple miscalibration; (b) partial showerhead clogging skewing gas distribution into a ring; (c) MFC gas-flow asymmetry or edge-purge imbalance; (d) susceptor rotation instability; (e) RF match drift producing ring-shaped plasma density. Diagnostic steps: 1) map deposition/etch rate vs. radius and locate the ring; 2) review heater zone temperature map and thermocouple calibration; 3) check showerhead differential pressure and last clean/PM date; 4) verify MFC calibration, gas-line balance, and edge-purge flow; 5) inspect susceptor rotation and RF reflected power. Remediation: 1) recalibrate heater zones; 2) clean or replace showerhead if differential pressure is abnormal; 3) recalibrate MFCs and rebalance edge purge; 4) stabilize susceptor rotation; 5) re-tune RF match. Re-run a uniformity wafer after each change. Escalation: a recurring fixed-radius ring across wafers points to a hardware (showerhead/heater) issue — schedule chamber PM rather than recipe tweaking.",
+    "defect_type": "donut",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Donut / Ring-Pattern Defect — Technical Remediation Guide",
+      "action": "Check deposition chamber temperature zones, showerhead condition, and gas-flow symmetry for radial non-uniformity.",
+      "category": "Deposition (CVD/PVD/ALD)"
+    }
+  },
+  {
+    "id": "guide_edge_loc_001",
+    "content": "Edge-Localized (Edge-Loc) Defect Technical Remediation Guide. Symptom: clustered defects in a localized edge region (not a full ring), frequently aligned with a mechanical contact point. Primary root causes: (a) robot end-effector pad wear or contact-position offset; (b) edge grip marks from excessive handling pressure; (c) aligner notch/flat offset concentrating contact on one edge zone; (d) load-port docking deviation; (e) cassette slot deformation; (f) bevel-etch deviation. Diagnostic steps: 1) overlay defect angular position against transfer-path contact points; 2) review end-effector pad wear and grip-pressure settings; 3) check aligner calibration and load-port docking precision; 4) inspect cassette slots and bevel-etch recipe/gas distribution. Remediation: 1) replace worn end-effector pads; 2) reduce grip pressure to spec; 3) recalibrate aligner offset to distribute contact; 4) re-dock load port; 5) swap deformed cassette; 6) adjust bevel-etch conditions. Escalation: if the defect angle is fixed and repeats per tool, hold the handler for robot teaching/PM. Confirm Grad-CAM evidence falls on the affected edge sector before acting.",
+    "defect_type": "edge_loc",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Edge-Localized Defect — Technical Remediation Guide",
+      "action": "Inspect wafer-handling contact points (end-effector, edge grip, load-port docking) and bevel/edge process conditions.",
+      "category": "Wafer Handling / Edge Process"
+    }
+  },
+  {
+    "id": "guide_edge_ring_001",
+    "content": "Edge-Ring Defect Technical Remediation Guide (critical class). Symptom: defect concentrated in a continuous ring at the extreme wafer edge; high yield-loss risk because it affects many edge die. Primary root causes: (a) Edge Bead Removal (EBR) nozzle pressure variation or clogging; (b) incorrect edge-exclusion width in the coater recipe; (c) spin-coater RPM deviation thickening the edge; (d) non-uniform edge rinse leaving residue; (e) bevel polish deviation; (f) chuck edge-zone temperature deviation shifting edge CD. Diagnostic steps: 1) compare edge thickness/CD profile against baseline; 2) inspect EBR nozzle condition and pressure trend; 3) verify edge-exclusion parameters and coater RPM stability; 4) check edge rinse alignment/flow and bevel polish pressure; 5) review chuck edge-zone temperature. Remediation: 1) service/clean EBR nozzle and restore pressure; 2) reset edge-exclusion width; 3) stabilize coater RPM and dispense timing; 4) correct edge rinse; 5) adjust bevel polish; 6) recalibrate chuck edge temperature. Operating rule: Edge-Ring is a critical class — never auto-pass or scrap on AI output alone. Move to the human-review queue, attach the edge profile trend and same-tool history, and confirm with Grad-CAM before disposition.",
+    "defect_type": "edge_ring",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Edge-Ring Defect — Technical Remediation Guide",
+      "action": "Review EBR nozzle/pressure, edge-exclusion recipe, coater RPM, and bevel polish; route to review queue, do not auto-pass.",
+      "category": "Coat / Develop / EBR"
+    }
+  },
+  {
+    "id": "guide_loc_001",
+    "content": "Localized Cluster (Loc) Defect Technical Remediation Guide. Symptom: a tight cluster of defects at an arbitrary location that repeats on a specific tool/chamber — a particle-source signature. Primary root causes: (a) chamber particle contamination; (b) dry-pump oil backstream; (c) gas-line filter contamination; (d) ESC surface damage; (e) lift-pin wear debris; (f) slit-valve seal wear; (g) transfer-chamber micro-leak; (h) electrostatic particle attraction. Diagnostic steps: 1) correlate defects with a single chamber via lot history and particle-counter trend; 2) check pump backstream and oil state; 3) inspect gas-line filter differential pressure; 4) examine ESC surface and backside particle map; 5) inspect lift pins, slit-valve seals, and chamber leak rate; 6) verify ionizer balance/grounding. Remediation: 1) chamber clean/season; 2) service pump and exhaust; 3) replace gas-line filter; 4) repair/replace ESC; 5) replace lift pins; 6) replace slit-valve seal; 7) repair leak; 8) rebalance ionizer. Escalation: hold the suspect chamber until the particle trend recovers; do not release wafers from a tool with a rising particle count.",
+    "defect_type": "loc",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Localized Cluster Defect — Technical Remediation Guide",
+      "action": "Isolate the offending chamber; check particle source (pump backstream, ESC, lift pins, slit-valve seals, gas-line filters).",
+      "category": "Process Chamber / Particle Control"
+    }
+  },
+  {
+    "id": "guide_random_001",
+    "content": "Random Particle Defect Technical Remediation Guide (critical class). Symptom: spatially scattered defects with no fixed pattern, frequently time-correlated rather than tool-specific — an environmental signature. Primary root causes: (a) HVAC filter change transient or FFU airflow drop; (b) cleanroom differential-pressure/door-interlock disturbance; (c) human-traffic particle bursts during shift change; (d) chemical hood exhaust instability; (e) DI water particle spike; (f) gas-cabinet purge bursts; (g) low-humidity electrostatic attraction. Diagnostic steps: 1) plot facility particle trend against the defect time window; 2) check FFU airflow and HVAC/filter change log; 3) review differential pressure, airflow, and access logs; 4) inspect hood exhaust and DI water resistivity/particle monitors; 5) check gas-cabinet purge sequence and humidity. Remediation: 1) stabilize HVAC/FFU after filter changes; 2) restore differential pressure; 3) enforce gowning/traffic control; 4) correct hood exhaust; 5) restore DI water quality; 6) tune gas-cabinet purge; 7) restore humidity. Operating rule: Random is a critical class for yield variability — when particle counts spike facility-wide, widen sampling and escalate to facilities; do not silently auto-pass scattered defects.",
+    "defect_type": "random",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Random Particle Defect — Technical Remediation Guide",
+      "action": "Treat as an environmental/facility event; check cleanroom HVAC, DI water, gas cabinets, and time-correlated activity.",
+      "category": "Cleanroom / Facility"
+    }
+  },
+  {
+    "id": "guide_scratch_001",
+    "content": "Scratch Defect Technical Remediation Guide (critical class). Symptom: long linear or arc-shaped defect, almost always mechanical contact rather than process — high risk of killing a row of die. Primary root causes: (a) scratch appearing after cassette unload from load-port/robot/cassette-slot contact; (b) robot-arm path interference; (c) chuck-surface foreign material scratching the backside; (d) handler belt/roller damage; (e) wafer slip during transfer; (f) end-effector pad wear; (g) alignment-stage interference; (h) boat-load interference. Diagnostic steps: 1) trace when the linear defect first appears in the flow; 2) review robot teaching coordinates and path clearance; 3) inspect chuck-surface cleanliness and backside defect map; 4) check handler belt/roller wear; 5) verify grip pressure, acceleration profile, and vacuum for slip. Remediation: 1) re-teach/correct robot path; 2) clean chuck surface; 3) replace damaged belt/rollers; 4) adjust grip and acceleration to stop slip; 5) replace worn end-effector pads; 6) correct stage/boat alignment. Operating rule: Scratch is a critical class. Hold the suspect transport module immediately, map the scratch direction to the contact source, and route to human review — a single uncaught scratch source can damage every subsequent wafer.",
+    "defect_type": "scratch",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Scratch Defect — Technical Remediation Guide",
+      "action": "Inspect mechanical contact along the transport path (robot teaching, chuck surface, handler belt, wafer slip).",
+      "category": "Transport / Mechanical Handling"
+    }
+  },
+  {
+    "id": "guide_near_full_001",
+    "content": "Near-Full Wafer Failure Technical Remediation Guide (critical class). Symptom: defects covering nearly the entire wafer — a gross process excursion, not a subtle pattern. Highest-severity, immediate-action class. Primary root causes: (a) recipe mismatch or wrong mask/job-deck; (b) chamber condition out of spec (post-PM not seasoned); (c) gas-supply interruption mid-process; (d) lithography dose/focus gross error; (e) developer concentration out of spec; (f) hotplate full-wafer temperature excursion; (g) precursor depletion / full deposition failure. Diagnostic steps: 1) immediately verify lot-start recipe, chamber recipe, mask ID/layer match, and any operator override; 2) check gas-supply pressure, interlocks, and alarm logs for the process window; 3) review scanner dose/focus and recipe validation; 4) check developer concentration/temperature; 5) review hotplate temperature map and precursor/bubbler levels. Remediation: 1) correct recipe/mask and re-run; 2) re-season chamber after PM; 3) restore gas supply; 4) correct dose/focus; 5) replace developer; 6) recalibrate hotplate; 7) refill precursor. Operating rule: Near-Full triggers a High-risk alert. Stop the lot, quarantine affected wafers, notify the shift lead, and do not release until root cause is confirmed.",
+    "defect_type": "near_full",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Near-Full Wafer Failure — Technical Remediation Guide",
+      "action": "Treat as a gross-process excursion: verify recipe/mask match, gas supply continuity, dose/develop, and chamber condition immediately.",
+      "category": "Gross Process Excursion"
+    }
+  },
+  {
+    "id": "guide_none_001",
+    "content": "Normal-Pattern Baseline and SPC Reference Guide. Purpose: a 'None' (normal) classification is not a no-op — normal wafers define the baseline against which drift and anomalies are judged. Practices: 1) archive the process conditions (tool, recipe, chamber) of confirmed-normal lots as a per-line baseline; 2) keep SPC control limits and trend charts current for key parameters (CD, overlay, thickness, particle); 3) register golden-sample images and metadata for visual reference; 4) record normal CD/overlay/thickness radial profiles as references for later comparison. Use: when a new pattern appears, compare it against the baseline distribution and golden samples to decide whether it is a true excursion or normal variation. Drift link: feed the normal baseline into drift monitoring so covariate shift can be detected early. Re-validate the baseline after major PM or recipe changes so the reference does not go stale.",
+    "defect_type": "none",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Normal-Pattern Baseline & SPC Reference Guide",
+      "action": "Archive normal-lot conditions as the drift-comparison baseline; keep SPC limits and golden samples current.",
+      "category": "Baseline / SPC"
+    }
+  },
+  {
+    "id": "guide_general_gradcam_001",
+    "content": "Grad-CAM Evidence Interpretation Guide. Purpose: Grad-CAM overlays show where the model focused; use them to validate, not just accept, a classification. Expected-vs-bad focus by class: Center → focus on the central die region; Edge-Ring → continuous focus along the wafer edge ring; Scratch → focus following the linear defect track; Loc → tight focus on the local cluster; Random → diffuse/scattered focus; Near-Full → broad activation across most of the wafer. Red flags: focus on the wafer background or notch; focus that does not overlap the visible defect; activation spread evenly with no relation to any feature. Action on mismatch: if the Grad-CAM focus does not match the predicted class location, treat the prediction as low-confidence regardless of the score. Do not auto-dispose; move the case to the human-in-the-loop review queue with the overlay attached. General rule: AI output is a first-pass screen. Engineers confirm root cause from Grad-CAM evidence plus process/metrology context before any disposition.",
+    "defect_type": "general",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Grad-CAM Evidence Interpretation Guide",
+      "action": "Confirm the Grad-CAM focus spatially matches the predicted defect class; mismatch means low-confidence — route to engineer review.",
+      "category": "Model Evidence / HITL"
+    }
+  },
+  {
+    "id": "guide_general_drift_001",
+    "content": "Model Drift Response Guide. Purpose: define the response when input or prediction drift approaches the configured threshold (e.g., PSI nearing the drift limit). Signals: rising population stability index on key features, a new device/product distribution entering the line, input-normalization changes, or a falling confirmed-accuracy trend. Response ladder: 1) at threshold approach, increase sampling and route more cases to human review; 2) investigate the drift source — covariate shift, new device mix, sensor/normalization change — before assuming model decay; 3) if drift is real and persistent, trigger a retraining candidate and validate it in staging; 4) compare candidate vs. production on critical-class recall and false-alarm rate, not overall accuracy alone; 5) promote only after the candidate beats production on the operational metrics; keep a rollback path. Guardrail: never promote a retrain candidate on a single aggregate metric; the operational risk is critical-class miss rate, so gate promotion on that.",
+    "defect_type": "general",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Model Drift Response Guide",
+      "action": "On drift-threshold approach, raise sampling/HITL, investigate covariate shift, and stage a retrain candidate before promoting.",
+      "category": "MLOps / Drift"
+    }
+  },
+  {
+    "id": "guide_general_hitl_001",
+    "content": "Human-in-the-Loop (HITL) Escalation Guide. Purpose: define when a case must leave the automated path and go to an engineer. Escalate when: confidence is below the low-confidence threshold (e.g., < 0.70); the pattern is novel or unseen; the predicted class is a critical class (Edge-Ring, Random, Scratch, Near-Full); Grad-CAM evidence does not match the prediction; or metrology rules are breached alongside the defect call. What to attach for review: the wafer map and Grad-CAM overlay, the top similar past cases and technical guide, the process/metrology context, and same-tool recent history. Disposition: the engineer confirms or overrides; record the decision so it becomes episodic memory the agent learns from. Core principle: AI judgment is a first-pass screen and a High-risk call always requires human confirmation before action — accuracy is secondary to not missing a critical defect.",
+    "defect_type": "general",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Human-in-the-Loop Escalation Guide",
+      "action": "Route low-confidence, novel-pattern, or critical-class cases to engineer review; never auto-dispose on AI output alone.",
+      "category": "Operations / HITL"
+    }
+  }
+]

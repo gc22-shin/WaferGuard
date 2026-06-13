@@ -40,7 +40,7 @@ def main() -> None:
     assert payload["overlay_url"].endswith("_overlay.png")
     assert payload["roi_url"].endswith("_roi.png")
     assert payload["image_source"] == "public_proxy"
-    assert "synthetic wafer fallback" in payload["proxy_status"]
+    assert payload["proxy_status"].startswith("WM-811K wafer map")
     assert payload["action_card"]["defect_type"] == "Scratch"
     assert payload["process_context"]["process_step"] == "Etch"
     assert payload["metrology"]["cd_nm"] == 31.8
@@ -66,6 +66,21 @@ def main() -> None:
     assert rag_eval.status_code == 200, rag_eval.text
     assert rag_eval.json()["summary"]["question_count"] >= 10
 
+    rag_index = client.get("/api/v1/rag/index")
+    assert rag_index.status_code == 200, rag_index.text
+    index_payload = rag_index.json()
+    assert index_payload["indexed"] >= 1
+    assert len(index_payload["defect_types"]) == 9
+
+    rag_search = client.get(
+        "/api/v1/rag/search",
+        params={"defect_type": "Edge-Ring", "q": "EBR nozzle", "k": 6},
+    )
+    assert rag_search.status_code == 200, rag_search.text
+    search_payload = rag_search.json()
+    assert search_payload["defect_type"] == "Edge-Ring"
+    assert search_payload["cases"], "expected at least one similar case"
+
     proxy_datasets = client.get("/api/v1/proxy-datasets")
     assert proxy_datasets.status_code == 200, proxy_datasets.text
     assert "반도체 fab 이미지로 표현하면 안 됩니다" in proxy_datasets.json()["source_boundary"]
@@ -76,6 +91,29 @@ def main() -> None:
 
     drift = client.post("/api/v1/mlops/drift", json={"intensity": "strong", "line_id": "LINE-7"})
     assert drift.status_code == 200, drift.text
+
+    # approve/reject with an engineer comment → fed back as agent context
+    from app.services import storage as _storage  # noqa: PLC0415
+
+    apr_id = _storage.insert_pending_approval(
+        "MLOPS-ALL", "recommend_retrain", {"trigger_type": "manual"}, "smoke: drift 0.42 권고"
+    )
+    rejected = client.post(
+        f"/api/v1/approvals/{apr_id}/reject",
+        json={"comment": "스모크: 신규 디바이스 편입이라 재학습 보류"},
+    )
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["comment"] == "스모크: 신규 디바이스 편입이라 재학습 보류"
+    feedback = _storage.recent_human_feedback(None, None, limit=5)
+    assert any(f.get("comment") for f in feedback), "approval comment should surface in human feedback"
+
+    # MLOps agent chat endpoint streams SSE (stub path, no LLM required)
+    mlops_chat = client.post(
+        "/api/v1/mlops/agent/chat/stream",
+        json={"message": "지금 재학습 필요해?", "use_llm": False},
+    )
+    assert mlops_chat.status_code == 200, mlops_chat.text
+    assert '"type"' in mlops_chat.text and '"done"' in mlops_chat.text
 
     demo = client.post(
         "/api/v1/demo/seed",
@@ -97,24 +135,6 @@ def main() -> None:
     )
     assert handoff.status_code == 200, handoff.text
     assert "다음 근무자 체크리스트" in handoff.json()["markdown"]
-
-    edited = client.put(
-        f"/api/v1/handoff/{handoff.json()['id']}",
-        json={
-            "headline": "교대 전 ETCH-02 이슈 확인 필요",
-            "operator_note": "자동 초안 수정 테스트",
-        },
-    )
-    assert edited.status_code == 200, edited.text
-    assert edited.json()["status"] == "draft"
-    assert "자동 초안 수정 테스트" in edited.json()["markdown"]
-
-    sent = client.post(
-        f"/api/v1/handoff/{handoff.json()['id']}/send",
-        json={"sender": "smoke-test", "message": "이대로 전달합니다."},
-    )
-    assert sent.status_code == 200, sent.text
-    assert sent.json()["status"] == "sent"
 
     scheduled_a = client.post(
         "/api/v1/handoff/report",
@@ -148,15 +168,34 @@ def main() -> None:
     state = client.get("/api/v1/mlops/state")
     assert state.status_code == 200, state.text
 
+    # MLOps agent (rule-based fallback to avoid an LLM round-trip in the smoke test)
+    mlops_agent = client.post("/api/v1/mlops/agent/run", json={"line_id": "LINE-7", "use_llm": False})
+    assert mlops_agent.status_code == 200, mlops_agent.text
+    assert mlops_agent.json().get("agent_kind") == "mlops"
+
     copilot = client.get("/api/v1/copilot/ops?line_id=LINE-7")
     assert copilot.status_code == 200, copilot.text
     assert copilot.json()["action_recommendations"]
+
+    # Verify new endpoints
+    approvals = client.get("/api/v1/pending-approvals")
+    assert approvals.status_code == 200, approvals.text
+
+    db_overview = client.get("/api/v1/db/overview")
+    assert db_overview.status_code == 200, db_overview.text
+    assert any(t["name"] == "inspections" for t in db_overview.json()["tables"])
+
+    db_rows = client.get("/api/v1/db/tables/inspections?limit=5")
+    assert db_rows.status_code == 200, db_rows.text
+    assert db_rows.json()["total"] >= 1
+    assert client.get("/api/v1/db/tables/not_a_table").status_code == 404
 
     print(
         {
             "health": health.json()["status"],
             "inspection_id": payload["id"],
             "risk": payload["risk_level"],
+            "agent_mode": payload.get("agent_mode", "n/a"),
             "metrology_rule_hits": len(payload["action_card"]["metrology_rule_hits"]),
             "roi": payload["roi_url"],
             "wm811k_macro_f1": eval_payload["summary"]["macro_f1"],
@@ -164,9 +203,11 @@ def main() -> None:
             "drift_status": drift.json()["status"],
             "demo_created": demo.json()["created_count"],
             "handoff_id": handoff.json()["id"],
-            "handoff_status": sent.json()["status"],
+            "pending_approvals": len(approvals.json()),
             "copilot_actions": len(copilot.json()["action_recommendations"]),
             "models": len(state.json()["models"]),
+            "mlops_agent": mlops_agent.json().get("agent_kind"),
+            "db_tables": len(db_overview.json()["tables"]),
         }
     )
 

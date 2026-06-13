@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import re
 from datetime import datetime, timezone
 
 from app.services.config import DRIFT_THRESHOLD
@@ -39,15 +40,34 @@ def simulate_drift(request: DriftRequest) -> dict[str, object]:
     }
     insert_drift_event(event)
     if drifted:
-        insert_alert("warning", "sns/slack", f"{request.line_id} Drift Score {score} 감지")
-        job = simulate_retraining(RetrainRequest(trigger_type="drift"))
-        event["retraining_job"] = job
+        # Record + alert only. Drift no longer auto-mints a model on every tick —
+        # retraining is a deliberate, approval-gated decision (one at a time), so
+        # the registry stops ballooning. The MLOps agent / operator decides.
+        insert_alert("warning", "sns/slack", f"{request.line_id} Drift Score {score} 감지 — 재학습 검토 필요")
     return event
 
 
+def _next_candidate_version() -> str:
+    """Next plausible semver candidate, derived from the current Production model.
+
+    e.g. Production wafer-defectnet-v2.3.1 → candidate wafer-defectnet-v2.4.0-rc1
+    (rc index bumps if a candidate for that minor already exists).
+    """
+    base = "wafer-defectnet"
+    models = current_models()
+    major, minor = 2, 3
+    prod = next((m for m in models if m.get("stage") == "Production"), None)
+    if prod:
+        mm = re.search(r"v(\d+)\.(\d+)", str(prod.get("version", "")))
+        if mm:
+            major, minor = int(mm.group(1)), int(mm.group(2))
+    target = f"{base}-v{major}.{minor + 1}.0"
+    existing = sum(1 for m in models if str(m.get("version", "")).startswith(target))
+    return f"{target}-rc{existing + 1}"
+
+
 def simulate_retraining(request: RetrainRequest) -> dict[str, object]:
-    stamp = datetime.now(timezone.utc).strftime("%m%d%H%M%S%f")
-    version = f"wg-local-v{stamp}"
+    version = _next_candidate_version()
     f1_score = round(random.uniform(0.858, 0.902), 3)
     latency = random.randint(72, 96)
     job = {

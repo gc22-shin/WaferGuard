@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
+import logging
+import os
 import random
+import threading
 from datetime import datetime, timezone
 
 from app.services.config import IMAGE_DIR, MODEL_VERSION
@@ -13,12 +17,58 @@ from app.services.action_card import (
     has_critical_metrology_hit,
     metrology_risk_delta,
 )
-from app.services.rag import search_cases
+from app.services.rag import retrieve_cases
 from app.services.reporting import build_report
 from app.services.risk import compute_risk_score, risk_level
 from app.services.schemas import InspectRequest
 from app.services.storage import insert_alert, insert_inspection, production_model, utc_now
 from app.services.synthetic_wafer import choose_defect, generate_images
+
+logger = logging.getLogger(__name__)
+
+
+def _run_agent_background(evidence: dict) -> None:
+    try:
+        from app.services.agent import run as agent_run  # noqa: PLC0415
+
+        agent_run(evidence)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "Background agent run failed for %s: %s", evidence.get("inspection_id"), exc
+        )
+
+
+# Serialize background agent runs through a single worker. The live stream can
+# fire an inspection every couple of seconds; firing a concurrent LLM agent run
+# for each one bursts the API rate limit (HTTP 429). One-at-a-time keeps the
+# request rate gentle. A small bounded backlog drops excess rather than piling up.
+_AGENT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="agent")
+_AGENT_MAX_PENDING = 4
+_AGENT_PENDING = 0
+_AGENT_PENDING_LOCK = threading.Lock()
+
+
+def _submit_agent(evidence: dict) -> bool:
+    global _AGENT_PENDING  # noqa: PLW0603
+    with _AGENT_PENDING_LOCK:
+        if _AGENT_PENDING >= _AGENT_MAX_PENDING:
+            logger.warning(
+                "Agent backlog full (%d pending); skipping background run for %s",
+                _AGENT_PENDING, evidence.get("inspection_id"),
+            )
+            return False
+        _AGENT_PENDING += 1
+
+    def _task() -> None:
+        global _AGENT_PENDING  # noqa: PLW0603
+        try:
+            _run_agent_background(evidence)
+        finally:
+            with _AGENT_PENDING_LOCK:
+                _AGENT_PENDING -= 1
+
+    _AGENT_EXECUTOR.submit(_task)
+    return True
 
 
 def run_inspection(request: InspectRequest) -> dict[str, object]:
@@ -31,7 +81,11 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
         defect_type=defect_type,
         output_dir=IMAGE_DIR,
     )
-    cases = search_cases(defect_type, request.line_id)
+    cases = retrieve_cases(
+        defect_type,
+        request.line_id,
+        query_text=f"{defect_type} 결함, {request.process_step} 공정, {request.equipment_id} 설비 이상 대응",
+    )
     process_context = build_process_context(request)
     metrology = build_metrology_context(request, float(image_result["hotspot_ratio"]))
     metrology_rule_hits = evaluate_metrology_rules(defect_type, process_context, metrology)
@@ -73,6 +127,54 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
         metrology_rule_hits=metrology_rule_hits,
     )
 
+    # Agent escalation: Low → rule-based only; Medium/High/review_required → Agent
+    agent_result: dict | None = None
+    needs_agent = level in ("Medium", "High") or status == "review_required"
+    if needs_agent:
+        evidence = {
+            "inspection_id": inspection_id,
+            "defect_type": defect_type,
+            "equipment_id": request.equipment_id,
+            "risk_level": level,
+            "risk_score": risk_score,
+            "confidence": confidence,
+            "metrology_rule_hits": metrology_rule_hits,
+            "rag_cases": cases,
+            "process_context": process_context,
+            "metrology": metrology,
+            "image_urls": [
+                f"/outputs/images/{image_result['overlay_path'].name}",
+                f"/outputs/images/{image_result['roi_path'].name}",
+            ],
+            "use_llm": request.use_llm,
+        }
+        llm_active = request.use_llm and bool(os.environ.get("LUXIA_API_KEY", "").strip())
+        if llm_active:
+            # LLM analysis takes seconds — run it in the background so the
+            # inspect response (and the live stream) returns immediately.
+            # Serialized through a single worker so concurrent stream inspections
+            # don't burst the LLM rate limit. The agent persists its trace, which
+            # the Agent tab polls for.
+            _submit_agent(evidence)
+            agent_result = {
+                "final_action": None,
+                "tool_calls": [],
+                "trace_id": None,
+                "agent_mode": "pending",
+            }
+        else:
+            try:
+                from app.services.agent import run as agent_run  # noqa: PLC0415
+                agent_result = agent_run(evidence)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Agent run failed for %s: %s", inspection_id, exc)
+                agent_result = {
+                    "final_action": f"Agent 실행 오류: {exc}",
+                    "tool_calls": [],
+                    "trace_id": None,
+                    "agent_mode": "error",
+                }
+
     record = {
         "id": inspection_id,
         "lot_id": request.lot_id,
@@ -84,9 +186,8 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
         "image_source": request.image_source,
         "proxy_dataset": request.proxy_dataset,
         "proxy_status": (
-            "local proxy image folder not configured; synthetic wafer fallback"
-            if request.image_source == "public_proxy"
-            else "synthetic wafer generator"
+            f"WM-811K wafer map ({image_result['wafer_source']['wm811k_id']}, "
+            f"lot={image_result['wafer_source']['lot_name']})"
         ),
         "defect_type": defect_type,
         "confidence": confidence,
@@ -106,6 +207,11 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
         "model_version": model_version,
         "status": status,
         "created_at": utc_now(),
+        # Agent fields (None for Low / rule-only cases)
+        "agent_final_action": agent_result.get("final_action") if agent_result else None,
+        "agent_tool_calls": agent_result.get("tool_calls") if agent_result else None,
+        "agent_trace_id": agent_result.get("trace_id") if agent_result else None,
+        "agent_mode": agent_result.get("agent_mode") if agent_result else "rule_only",
     }
     insert_inspection(record)
     if level == "High":

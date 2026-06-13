@@ -1,0 +1,199 @@
+import React, { useCallback, useEffect, useState } from "react";
+import { Icon, Panel } from "./lib";
+import RagView from "./RagView";
+
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+
+const TABLE_LABELS = {
+  inspections:       "검사 이력",
+  model_registry:    "모델 레지스트리",
+  drift_events:      "드리프트 이벤트",
+  retraining_jobs:   "재학습 잡",
+  alerts:            "알림",
+  handoff_reports:   "인수인계 리포트",
+  agent_traces:      "Agent 트레이스",
+  pending_approvals: "승인 대기",
+  rag_documents:     "RAG 문서",
+};
+
+function formatBytes(n) {
+  if (!n) return "0 B";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function CellValue({ value }) {
+  if (value === null || value === undefined) {
+    return <span style={{ color: "var(--text-3)" }}>—</span>;
+  }
+  const s = String(value);
+  const truncated = s.length > 90 ? s.slice(0, 90) + "…" : s;
+  return <span title={s.length > 90 ? s : undefined}>{truncated}</span>;
+}
+
+const PAGE_SIZE = 25;
+
+export default function DatabaseView() {
+  const [overview, setOverview] = useState(null);
+  const [selected, setSelected] = useState("inspections");
+  const [data, setData] = useState(null);
+  const [offset, setOffset] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const loadOverview = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/db/overview`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setOverview(await res.json());
+      setError(null);
+    } catch (e) {
+      setError(`DB 개요 조회 실패: ${e.message}`);
+    }
+  }, []);
+
+  const loadTable = useCallback(async (table, off) => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/db/tables/${table}?limit=${PAGE_SIZE}&offset=${off}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setData(await res.json());
+      setError(null);
+    } catch (e) {
+      setError(`테이블 조회 실패: ${e.message}`);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadOverview(); }, [loadOverview]);
+  useEffect(() => { loadTable(selected, offset); }, [selected, offset, loadTable]);
+
+  function selectTable(name) {
+    setSelected(name);
+    setOffset(0);
+  }
+
+  function refresh() {
+    loadOverview();
+    loadTable(selected, offset);
+  }
+
+  const total = data?.total ?? 0;
+  const pageStart = total === 0 ? 0 : offset + 1;
+  const pageEnd = Math.min(offset + PAGE_SIZE, total);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <RagView />
+
+      <Panel title="데이터베이스 브라우저 · SQLite" icon="box" dense pad={0}
+        right={
+          <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {overview && (
+              <span className="mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>
+                waferguard.db · {formatBytes(overview.db_size_bytes)}
+              </span>
+            )}
+            <button className="btn btn-ghost" onClick={refresh} style={{ padding: "4px 8px" }} title="새로고침">
+              <Icon name="refresh" size={13} />
+            </button>
+          </span>
+        }>
+        {error && (
+          <div style={{ padding: "10px 14px", fontSize: 12, color: "var(--high)", borderBottom: "1px solid var(--border)" }}>
+            {error}
+          </div>
+        )}
+        <div style={{ display: "grid", gridTemplateColumns: "190px 1fr", alignItems: "stretch" }}>
+          {/* table list */}
+          <div style={{ borderRight: "1px solid var(--border)", padding: "8px 6px", display: "flex", flexDirection: "column", gap: 2 }}>
+            <div className="label-cap" style={{ padding: "4px 8px 6px" }}>테이블</div>
+            {(overview?.tables || []).map(t => {
+              const on = t.name === selected;
+              return (
+                <button key={t.name} onClick={() => selectTable(t.name)} className="focusable"
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8, cursor: "pointer",
+                    padding: "6px 8px", borderRadius: 7, border: "1px solid transparent",
+                    font: "inherit", textAlign: "left", width: "100%",
+                    background: on ? "var(--accent-dim)" : "transparent",
+                    color: on ? "var(--accent)" : "var(--text-2)",
+                    transition: "background .15s, color .15s",
+                  }}>
+                  <span style={{ fontSize: 11.5, fontWeight: on ? 600 : 500, flex: 1, minWidth: 0 }}>
+                    {TABLE_LABELS[t.name] || t.name}
+                  </span>
+                  <span className="mono" style={{ fontSize: 10, color: on ? "var(--accent)" : "var(--text-3)" }}>
+                    {t.row_count.toLocaleString()}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* rows */}
+          <div style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderBottom: "1px solid var(--border)" }}>
+              <span className="mono" style={{ fontSize: 11.5, color: "var(--text)", fontWeight: 600 }}>{selected}</span>
+              <span className="mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>
+                {pageStart}–{pageEnd} / {total.toLocaleString()} rows
+              </span>
+              {loading && <span className="mono" style={{ fontSize: 10.5, color: "var(--text-3)" }}>로딩…</span>}
+              <span style={{ marginLeft: "auto", display: "flex", gap: 5 }}>
+                <button className="btn btn-ghost" disabled={offset === 0}
+                  onClick={() => setOffset(o => Math.max(0, o - PAGE_SIZE))} style={{ padding: "3px 9px", fontSize: 11 }}>
+                  이전
+                </button>
+                <button className="btn btn-ghost" disabled={offset + PAGE_SIZE >= total}
+                  onClick={() => setOffset(o => o + PAGE_SIZE)} style={{ padding: "3px 9px", fontSize: 11 }}>
+                  다음
+                </button>
+              </span>
+            </div>
+            <div style={{ overflowX: "auto", maxHeight: 440, overflowY: "auto" }}>
+              <table style={{ borderCollapse: "collapse", fontSize: 11, width: "100%" }}>
+                <thead>
+                  <tr>
+                    {(data?.columns || []).map(c => (
+                      <th key={c} className="mono" style={{
+                        textAlign: "left", padding: "7px 10px", fontWeight: 600, fontSize: 9.5,
+                        letterSpacing: ".05em", textTransform: "uppercase", color: "var(--text-3)",
+                        borderBottom: "1px solid var(--border)", whiteSpace: "nowrap",
+                        position: "sticky", top: 0, background: "var(--panel)", zIndex: 1,
+                      }}>{c}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data?.rows || []).map((row, i) => (
+                    <tr key={i}>
+                      {(data?.columns || []).map(c => (
+                        <td key={c} className="mono" style={{
+                          padding: "6px 10px", color: "var(--text-2)", whiteSpace: "nowrap",
+                          maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis",
+                          borderBottom: "1px solid var(--border-soft)",
+                        }}>
+                          <CellValue value={row[c]} />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                  {data && data.rows.length === 0 && (
+                    <tr>
+                      <td colSpan={Math.max(1, (data.columns || []).length)}
+                        style={{ padding: "22px 12px", textAlign: "center", color: "var(--text-3)", fontSize: 11.5 }}>
+                        레코드 없음
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </Panel>
+    </div>
+  );
+}

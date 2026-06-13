@@ -3,15 +3,13 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 
-from app.services.schemas import HandoffEditRequest, HandoffReportRequest, HandoffSendRequest
+from app.services.schemas import HandoffReportRequest
 from app.services.storage import (
     find_handoff_by_schedule_key,
-    get_handoff_report,
     insert_handoff_report,
     latest_handoff_report,
     list_inspections_for_handoff,
     metrics,
-    save_handoff_report,
     utc_now,
 )
 
@@ -98,38 +96,6 @@ def _schedule_key(request: HandoffReportRequest) -> str | None:
         request.scheduled_for.strip(),
     ]
     return "|".join(parts)
-
-
-def edit_handoff_report(report_id: str, request: HandoffEditRequest) -> dict[str, object] | None:
-    report = get_handoff_report(report_id)
-    if report is None:
-        return None
-    if request.headline is not None:
-        report["headline"] = request.headline.strip()
-    if request.scrap_risk is not None:
-        report["scrap_risk"] = request.scrap_risk
-    if request.operator_note is not None:
-        report["operator_note"] = request.operator_note.strip()
-    if request.markdown is not None:
-        report["markdown"] = request.markdown
-    else:
-        report["markdown"] = _markdown(report)
-    report["status"] = "draft"
-    save_handoff_report(report)
-    return report
-
-
-def send_handoff_report(report_id: str, request: HandoffSendRequest) -> dict[str, object] | None:
-    report = get_handoff_report(report_id)
-    if report is None:
-        return None
-    report["status"] = "sent"
-    report["sent_at"] = utc_now()
-    report["sent_by"] = request.sender
-    report["send_message"] = request.message
-    report["markdown"] = _markdown(report)
-    save_handoff_report(report)
-    return report
 
 
 def _headline(

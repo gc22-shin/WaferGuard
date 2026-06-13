@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import json
+import logging
+import threading
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.services.config import OUTPUT_DIR, ensure_runtime_dirs
@@ -10,33 +15,63 @@ from app.services.copilot import ops_copilot_summary
 from app.services.data_registry import metrology_threshold_basis, proxy_dataset_manifest
 from app.services.demo import seed_demo_data
 from app.services.evaluation import wm811k_evaluation_report
-from app.services.handoff import edit_handoff_report, generate_handoff_report, get_latest_handoff_report, send_handoff_report
+from app.services.handoff import generate_handoff_report, get_latest_handoff_report
 from app.services.mlops import pipeline_state, promote_latest, rollback, simulate_drift, simulate_retraining
 from app.services.pipeline import run_inspection
+from app.services.rag import browse_cases, index_stats
 from app.services.rag_eval import rag_evaluation_set
+from app.services.defect_chat import chat_about_inspection, stream_chat_about_inspection
 from app.services.schemas import (
+    AgentStreamRequest,
+    ApprovalResolveRequest,
     AutomationTickRequest,
     DemoSeedRequest,
     DriftRequest,
-    HandoffEditRequest,
     HandoffReportRequest,
-    HandoffSendRequest,
     InspectRequest,
+    InspectionChatRequest,
+    MlopsAgentRequest,
+    MlopsChatRequest,
     PromoteRequest,
     RetrainRequest,
     ReviewRequest,
     RollbackRequest,
 )
 from app.services.storage import (
+    browse_table,
+    db_overview,
+    get_agent_trace_for_inspection,
     get_inspection,
     init_db,
+    insert_alert,
     list_inspections,
+    list_pending_approvals,
     metrics,
     record_review,
+    resolve_approval,
 )
 
 ensure_runtime_dirs()
 init_db()
+
+
+def _seed_rag_index_background() -> None:
+    """Seed the vector RAG corpus once at startup, off the request path.
+
+    Embedding the corpus needs network calls, so it runs in a daemon thread —
+    the app boots immediately and retrieval falls back to the deterministic
+    library until the index is ready.
+    """
+    try:
+        from app.services.rag import ensure_rag_index  # noqa: PLC0415
+
+        result = ensure_rag_index()
+        logging.getLogger(__name__).info("RAG index seed: %s", result)
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).warning("RAG index seed failed: %s", exc)
+
+
+threading.Thread(target=_seed_rag_index_background, daemon=True).start()
 
 app = FastAPI(
     title="WaferGuard Agent Simulation API",
@@ -86,12 +121,103 @@ def inspection_detail(inspection_id: str) -> dict[str, object]:
     return record
 
 
+@app.get("/api/v1/inspect/{inspection_id}/trace")
+def inspection_trace(inspection_id: str) -> dict[str, object]:
+    """Latest Agent trace (final action, tool calls, mode) for an inspection."""
+    trace = get_agent_trace_for_inspection(inspection_id)
+    if trace is None:
+        raise HTTPException(status_code=404, detail="No agent trace for this inspection")
+    return trace
+
+
+@app.post("/api/v1/inspect/{inspection_id}/chat")
+def inspection_chat(inspection_id: str, request: InspectionChatRequest) -> dict[str, object]:
+    """Evidence-grounded LLM chat about one inspection."""
+    record = get_inspection(inspection_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    trace = get_agent_trace_for_inspection(inspection_id)
+    return chat_about_inspection(
+        record, request.message, request.history, trace,
+        use_llm=request.use_llm, extra_context=request.extra_context,
+    )
+
+
+@app.post("/api/v1/inspect/{inspection_id}/chat/stream")
+def inspection_chat_stream(inspection_id: str, request: InspectionChatRequest) -> StreamingResponse:
+    """Agentic, streaming chat: emits tool_call / tool_result / token / done events
+    as Server-Sent Events so the UI can show tool activity and stream the answer."""
+    record = get_inspection(inspection_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    trace = get_agent_trace_for_inspection(inspection_id)
+
+    def event_source():
+        try:
+            for event in stream_chat_about_inspection(
+                record, request.message, request.history, trace,
+                use_llm=request.use_llm, extra_context=request.extra_context,
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            err = {"type": "done", "reply": f"오류: 응답 생성 실패 ({exc})", "agent_mode": "error", "tool_calls": []}
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.post("/api/v1/review/{inspection_id}")
 def review(inspection_id: str, request: ReviewRequest) -> dict[str, object]:
     record = record_review(inspection_id, request.decision, request.reviewer, request.note)
     if record is None:
         raise HTTPException(status_code=404, detail="Inspection not found")
+    # RAG learning loop (Gap 3): an engineer-confirmed decision becomes retrievable
+    # knowledge, so the corpus gets smarter as the line operates.
+    record["knowledge_saved"] = _ingest_reviewed_case(record, request)
     return record
+
+
+def _ingest_reviewed_case(record: dict[str, object], request: ReviewRequest) -> dict[str, object] | None:
+    # Only confirmed outcomes become retrievable knowledge. "needs_review" is an
+    # open state, not a resolved decision — writing it back would teach the RAG
+    # corpus from cases the engineer hasn't actually concluded.
+    if request.decision not in ("approved", "false_alarm"):
+        return {"skipped": True, "reason": "decision_not_confirmed"}
+    try:
+        from app.services.tools import save_case_to_knowledge  # noqa: PLC0415
+
+        defect = record.get("defect_type", "결함")
+        equip = record.get("equipment_id", "?")
+        note = (request.note or "").strip()
+        decision_label = {
+            "approved": "조치 완료",
+            "needs_review": "추가 리뷰 필요",
+            "false_alarm": "오탐 처리",
+        }.get(request.decision, request.decision)
+        title = f"{defect} 대응 — {equip}"
+        summary = (
+            f"{record.get('risk_level')} 리스크(score {float(record.get('risk_score') or 0):.2f}) "
+            f"{defect} 검사를 {decision_label}로 처리."
+        )
+        action = note or decision_label
+        return save_case_to_knowledge(
+            title=title,
+            summary=summary,
+            action=action,
+            defect_type=str(defect),
+            metadata={
+                "inspection_id": record.get("id"),
+                "decision": request.decision,
+                "reviewer": request.reviewer,
+                "equipment_id": equip,
+            },
+        )
+    except Exception:  # noqa: BLE001
+        return None
 
 
 @app.post("/api/v1/demo/seed")
@@ -112,6 +238,38 @@ def wm811k_evaluation() -> dict[str, object]:
 @app.get("/api/v1/rag/evaluation")
 def rag_evaluation() -> dict[str, object]:
     return rag_evaluation_set()
+
+
+@app.get("/api/v1/rag/index")
+def rag_index() -> dict[str, object]:
+    """Live RAG index stats (indexed count, retrieval mode, per-type counts)."""
+    return index_stats()
+
+
+@app.get("/api/v1/rag/search")
+def rag_search(
+    defect_type: str = "Edge-Ring",
+    q: str = "",
+    line_id: str = "LINE-7",
+    k: int = 6,
+) -> dict[str, object]:
+    """Top-k similar past cases for a defect type, optionally refined by keyword."""
+    return browse_cases(defect_type, query=q, line_id=line_id, k=k)
+
+
+@app.get("/api/v1/db/overview")
+def database_overview() -> dict[str, object]:
+    """Tables, row counts, and columns of the workflow SQLite DB."""
+    return db_overview()
+
+
+@app.get("/api/v1/db/tables/{table_name}")
+def database_table(table_name: str, limit: int = 50, offset: int = 0) -> dict[str, object]:
+    """Paginated rows from one workflow table (read-only)."""
+    result = browse_table(table_name, limit=limit, offset=offset)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Unknown table")
+    return result
 
 
 @app.get("/api/v1/automation/status")
@@ -147,22 +305,6 @@ def handoff_report(request: HandoffReportRequest) -> dict[str, object]:
     return generate_handoff_report(request)
 
 
-@app.put("/api/v1/handoff/{report_id}")
-def update_handoff_report(report_id: str, request: HandoffEditRequest) -> dict[str, object]:
-    report = edit_handoff_report(report_id, request)
-    if report is None:
-        raise HTTPException(status_code=404, detail="Handoff report not found")
-    return report
-
-
-@app.post("/api/v1/handoff/{report_id}/send")
-def confirm_handoff_report(report_id: str, request: HandoffSendRequest) -> dict[str, object]:
-    report = send_handoff_report(report_id, request)
-    if report is None:
-        raise HTTPException(status_code=404, detail="Handoff report not found")
-    return report
-
-
 @app.get("/api/v1/copilot/ops")
 def ops_copilot(line_id: str = "ALL") -> dict[str, object]:
     return ops_copilot_summary(line_id=line_id)
@@ -171,6 +313,86 @@ def ops_copilot(line_id: str = "ALL") -> dict[str, object]:
 @app.get("/api/v1/mlops/state")
 def mlops_state() -> dict[str, object]:
     return pipeline_state()
+
+
+@app.get("/api/v1/mlops/drift/history")
+def mlops_drift_history(limit: int = 30) -> dict[str, object]:
+    """Recent drift-score history + current Production model, for the drift chart."""
+    from app.services.config import DRIFT_THRESHOLD  # noqa: PLC0415
+    from app.services.storage import list_drift_events, production_model  # noqa: PLC0415
+
+    events = list(reversed(list_drift_events(limit=limit)))  # oldest → newest for plotting
+    return {
+        "events": events,
+        "threshold": DRIFT_THRESHOLD,
+        "production_model": production_model(),
+    }
+
+
+@app.post("/api/v1/mlops/agent/run")
+def mlops_agent_run(request: MlopsAgentRequest) -> dict[str, object]:
+    """Run the fleet-level MLOps agent: it inspects model performance + drift via
+    tools and decides whether to recommend retraining (approval-gated)."""
+    try:
+        from app.services.agent import run_mlops_agent  # noqa: PLC0415
+
+        return run_mlops_agent(line_id=request.line_id, use_llm=request.use_llm, autonomy=request.autonomy)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"MLOps agent run failed: {exc}") from exc
+
+
+@app.get("/api/v1/mlops/agent/traces")
+def mlops_agent_traces(limit: int = 20) -> list[dict[str, object]]:
+    """Recent MLOps-agent runs for the monitoring log — includes delegation-triggered
+    runs (when the inspection agent escalated), which don't originate in the UI."""
+    from app.services.storage import list_mlops_agent_traces  # noqa: PLC0415
+
+    return list_mlops_agent_traces(limit=limit)
+
+
+@app.post("/api/v1/mlops/agent/run/stream")
+def mlops_agent_run_stream(request: MlopsAgentRequest) -> StreamingResponse:
+    """Streaming MLOps agent run — emits tool_call / tool_result / token / done
+    as Server-Sent Events so the UI shows the agent's reasoning live."""
+    from app.services.agent import stream_mlops_agent  # noqa: PLC0415
+
+    def event_source():
+        try:
+            for event in stream_mlops_agent(line_id=request.line_id, use_llm=request.use_llm, autonomy=request.autonomy):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            err = {"type": "done", "final_action": f"오류: 분석 실행 실패 ({exc})", "agent_mode": "error", "tool_calls": []}
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/api/v1/mlops/agent/chat/stream")
+def mlops_agent_chat_stream(request: MlopsChatRequest) -> StreamingResponse:
+    """Streaming chat with the MLOps agent, grounded in the monitoring log so far —
+    emits tool_call / tool_result / token / done as Server-Sent Events."""
+    from app.services.mlops_chat import stream_mlops_chat  # noqa: PLC0415
+
+    def event_source():
+        try:
+            for event in stream_mlops_chat(
+                request.message, request.history,
+                use_llm=request.use_llm, extra_context=request.extra_context,
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            err = {"type": "done", "reply": f"오류: 응답 생성 실패 ({exc})", "agent_mode": "error", "tool_calls": []}
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/api/v1/mlops/drift")
@@ -191,3 +413,129 @@ def promote(request: PromoteRequest) -> dict[str, object]:
 @app.post("/api/v1/models/rollback")
 def model_rollback(request: RollbackRequest) -> dict[str, object]:
     return rollback(request.reason)
+
+
+# ---------------------------------------------------------------------------
+# Pending Approvals (Part 1-3)
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/v1/pending-approvals")
+def pending_approvals(status: str = "pending") -> list[dict[str, object]]:
+    """List High-risk Tool requests awaiting human approval."""
+    return list_pending_approvals(status=status)
+
+
+@app.post("/api/v1/approvals/{approval_id}/approve")
+def approve_action(approval_id: str, request: ApprovalResolveRequest | None = None) -> dict[str, object]:
+    """Approve a pending High-risk Tool request and execute the underlying action.
+
+    An optional engineer comment is stored on the approval and later fed back to
+    the agent as human-feedback context."""
+    comment = request.comment if request else ""
+    row = resolve_approval(approval_id, "approved", comment=comment)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Approval not found")
+
+    tool_name = row.get("tool_name", "")
+    payload = row.get("payload", {})
+
+    # Execute the actual action post-approval
+    if tool_name == "trigger_critical_alert":
+        insert_alert(
+            "critical",
+            "sns/slack",
+            payload.get("message", f"승인된 critical alert: {row.get('inspection_id')}"),
+        )
+    elif tool_name == "recommend_retrain":
+        try:
+            from app.services.mlops import simulate_retraining  # noqa: PLC0415
+            from app.services.schemas import RetrainRequest as _RR  # noqa: PLC0415
+
+            simulate_retraining(_RR(trigger_type="manual"))
+        except Exception as exc:  # noqa: BLE001
+            row["retraining_note"] = f"재학습 시뮬레이션 오류: {exc}"
+
+    row["executed_action"] = tool_name
+    return row
+
+
+@app.post("/api/v1/approvals/{approval_id}/reject")
+def reject_action(approval_id: str, request: ApprovalResolveRequest | None = None) -> dict[str, object]:
+    """Reject a pending High-risk Tool request, storing an optional engineer comment."""
+    comment = request.comment if request else ""
+    row = resolve_approval(approval_id, "rejected", comment=comment)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Approval not found")
+    return row
+
+
+def _evidence_from_record(record: dict, use_llm: bool = True) -> dict[str, object]:
+    """Rebuild the agent Evidence dict from a persisted inspection record."""
+    return {
+        "inspection_id": record.get("id"),
+        "defect_type": record.get("defect_type"),
+        "equipment_id": record.get("equipment_id"),
+        "risk_level": record.get("risk_level"),
+        "risk_score": record.get("risk_score"),
+        "confidence": record.get("confidence"),
+        "metrology_rule_hits": record.get("action_card", {}).get("metrology_rule_hits", []),
+        "rag_cases": record.get("cases", []),
+        "process_context": record.get("process_context", {}),
+        "metrology": record.get("metrology", {}),
+        "image_urls": [url for url in [record.get("overlay_url"), record.get("roi_url")] if url],
+        "use_llm": use_llm,
+    }
+
+
+@app.post("/api/v1/inspect/{inspection_id}/re-agent")
+def re_agent(inspection_id: str) -> dict[str, object]:
+    """Manually trigger Agent re-analysis on any inspection in the review queue."""
+    record = get_inspection(inspection_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+
+    try:
+        from app.services.agent import run as agent_run  # noqa: PLC0415
+
+        agent_result = agent_run(_evidence_from_record(record))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Agent re-run failed: {exc}") from exc
+
+    return {
+        "inspection_id": inspection_id,
+        "agent_final_action": agent_result.get("final_action"),
+        "agent_tool_calls": agent_result.get("tool_calls"),
+        "agent_trace_id": agent_result.get("trace_id"),
+        "agent_mode": agent_result.get("agent_mode"),
+    }
+
+
+@app.post("/api/v1/inspect/{inspection_id}/agent/stream")
+def inspection_agent_stream(inspection_id: str, request: AgentStreamRequest) -> StreamingResponse:
+    """Run the flagship inspection agent live, streaming its reasoning as SSE.
+
+    Emits tool_call / tool_result / token / done events — the same contract the
+    chat and MLOps streams use — so the situation-judgment → evidence → tool
+    flow is visible instead of only landing as a polled trace.
+    """
+    record = get_inspection(inspection_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    evidence = _evidence_from_record(record, use_llm=request.use_llm)
+
+    def event_source():
+        try:
+            from app.services.agent import stream_inspection_agent  # noqa: PLC0415
+
+            for event in stream_inspection_agent(evidence):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            err = {"type": "done", "final_action": f"오류: 실행 실패 ({exc})", "agent_mode": "error", "tool_calls": [], "agent_kind": "inspection"}
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
