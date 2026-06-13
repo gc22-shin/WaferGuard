@@ -750,6 +750,102 @@ def resolve_approval(approval_id: str, status: str) -> dict | None:
     return d
 
 
+def count_rag_documents() -> int:
+    """Number of indexed RAG documents (used to decide whether to seed)."""
+    with connect() as conn:
+        return conn.execute("SELECT COUNT(*) AS c FROM rag_documents").fetchone()["c"]
+
+
+def recent_human_feedback(
+    equipment_id: str | None = None,
+    defect_type: str | None = None,
+    limit: int = 5,
+) -> list[dict]:
+    """Resolved human decisions the agent should learn from (episodic memory).
+
+    Combines two signals, newest first:
+      - approved/rejected High-risk Tool requests (pending_approvals), joined to
+        the originating inspection for equipment/defect context.
+      - engineer review decisions recorded on inspections.
+    Filters by equipment_id / defect_type when provided so the agent only sees
+    feedback relevant to the case in front of it.
+    """
+    out: list[dict] = []
+    with connect() as conn:
+        # 1) Resolved approvals (the agent's own recommendations that a human ruled on)
+        rows = conn.execute(
+            """
+            SELECT a.tool_name, a.reason, a.status, a.resolved_at,
+                   a.inspection_id, i.equipment_id, i.defect_type
+            FROM pending_approvals a
+            LEFT JOIN inspections i ON i.id = a.inspection_id
+            WHERE a.status IN ('approved', 'rejected')
+            ORDER BY a.resolved_at DESC
+            """
+        ).fetchall()
+        for r in rows:
+            d = dict(r)
+            # When a filter is given, require an exact match: a per-wafer agent
+            # asking about ETCH-02/Scratch should not see fleet-level (NULL
+            # equipment) retrain decisions. The MLOps path passes no filter and
+            # therefore sees everything, including FLEET rows.
+            if equipment_id and d.get("equipment_id") != equipment_id:
+                continue
+            if defect_type and d.get("defect_type") != defect_type:
+                continue
+            out.append(
+                {
+                    "kind": "approval",
+                    "decision": d["status"],
+                    "tool_name": d["tool_name"],
+                    "reason": d.get("reason"),
+                    "equipment_id": d.get("equipment_id"),
+                    "defect_type": d.get("defect_type"),
+                    "inspection_id": d.get("inspection_id"),
+                    "at": d.get("resolved_at"),
+                }
+            )
+            if len(out) >= limit:
+                return out
+
+        # 2) Engineer review decisions on inspections
+        params: list[object] = []
+        where = ["engineer_decision IS NOT NULL AND engineer_decision != ''"]
+        if equipment_id:
+            where.append("equipment_id = ?")
+            params.append(equipment_id)
+        if defect_type:
+            where.append("defect_type = ?")
+            params.append(defect_type)
+        params.append(limit)
+        review_rows = conn.execute(
+            f"""
+            SELECT id, equipment_id, defect_type, engineer_decision, review_note, created_at
+            FROM inspections
+            WHERE {' AND '.join(where)}
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            params,
+        ).fetchall()
+    for r in review_rows:
+        d = dict(r)
+        out.append(
+            {
+                "kind": "review",
+                "decision": d.get("engineer_decision"),
+                "reason": d.get("review_note"),
+                "equipment_id": d.get("equipment_id"),
+                "defect_type": d.get("defect_type"),
+                "inspection_id": d.get("id"),
+                "at": d.get("created_at"),
+            }
+        )
+        if len(out) >= limit:
+            break
+    return out[:limit]
+
+
 def upsert_rag_document(
     doc_id: str,
     content: str,

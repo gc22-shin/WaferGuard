@@ -16,7 +16,7 @@ from app.services.action_card import (
     has_critical_metrology_hit,
     metrology_risk_delta,
 )
-from app.services.rag import search_cases
+from app.services.rag import retrieve_cases
 from app.services.reporting import build_report
 from app.services.risk import compute_risk_score, risk_level
 from app.services.schemas import InspectRequest
@@ -47,7 +47,11 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
         defect_type=defect_type,
         output_dir=IMAGE_DIR,
     )
-    cases = search_cases(defect_type, request.line_id)
+    cases = retrieve_cases(
+        defect_type,
+        request.line_id,
+        query_text=f"{defect_type} 결함, {request.process_step} 공정, {request.equipment_id} 설비 이상 대응",
+    )
     process_context = build_process_context(request)
     metrology = build_metrology_context(request, float(image_result["hotspot_ratio"]))
     metrology_rule_hits = evaluate_metrology_rules(defect_type, process_context, metrology)
@@ -96,6 +100,7 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
         evidence = {
             "inspection_id": inspection_id,
             "defect_type": defect_type,
+            "equipment_id": request.equipment_id,
             "risk_level": level,
             "risk_score": risk_score,
             "confidence": confidence,

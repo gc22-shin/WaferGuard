@@ -37,16 +37,24 @@ _CHAT_TOOL_NAMES = (
 )
 
 _SYSTEM_PROMPT = (
-    "당신은 WaferGuard의 결함 분석 어시스턴트입니다. "
-    "아래 제공된 검사 evidence를 1차 근거로 삼아 엔지니어의 질문에 한국어로 간결하게 답합니다.\n"
-    "규칙:\n"
-    "1. evidence로 답할 수 있으면 evidence 범위 안에서 답합니다.\n"
-    "2. evidence에 없는 정보(같은 설비의 과거 이력, 계측 추세, 모델/drift 상태, 추가 유사 사례)가 "
-    "필요하면 제공된 도구를 호출해 실제 데이터를 조회한 뒤 답합니다. 수치를 지어내지 않습니다.\n"
-    "3. 'ETCH-02에서 최근에도 이랬어?' 같은 질문은 get_equipment_history로, "
-    "'계속 밀리는 거야?'는 get_metrology_trend로 직접 확인합니다.\n"
-    "4. 도구 결과는 답변에 근거로 인용합니다 (예: '24h 내 동일 결함 5회 → 반복성').\n"
-    "5. 답변은 3~6문장 이내로, 필요하면 점검 순서를 번호로 제시합니다."
+    "당신은 WaferGuard의 반도체 공정 결함 대응 어시스턴트입니다. "
+    "엔지니어는 지금 특정 검사(웨이퍼) 한 건을 보고 있고, 그 검사의 evidence(분류 결과, 리스크, "
+    "계측값, 계측 룰 히트, 추정 원인, 권장 액션, RAG 유사 사례, Agent 판단)가 아래에 주어집니다.\n"
+    "역할과 답변 규칙:\n"
+    "1. 항상 '이 검사' 맥락 안에서, 현장 엔지니어에게 말하듯 한국어로 구체적으로 답합니다.\n"
+    "2. 함께 제공되는 이미지는 '이 웨이퍼의 Grad-CAM/ROI 결함 이미지'입니다. 절대 "
+    "'이 이미지는 무엇을 시각화한 것처럼 보입니다' 같은 일반적·추상적 설명을 하지 마세요. "
+    "결함 위치·패턴을 evidence와 연결해 해석합니다.\n"
+    "3. '그래서 내가 뭐해야돼?', '어떻게 조치해?', '다음 뭐 봐야돼?' 같은 질문에는 절대 일반론으로 "
+    "답하지 말고, 위 evidence의 '권장 액션'과 '추정 원인'을 근거로 우선순위가 있는 구체적 조치를 "
+    "1·2·3 번호로 제시합니다 (예: '1) ETCH-02 EBR nozzle 압력 로그부터 확인 → ...').\n"
+    "4. evidence로 답할 수 있으면 evidence 범위 안에서 답합니다. evidence에 없는 정보(같은 설비 과거 "
+    "이력, 계측 추세, 모델/drift 상태, 추가 유사 사례)가 필요하면 도구를 호출해 실제 데이터를 조회한 뒤 "
+    "답합니다. 수치를 지어내지 않습니다.\n"
+    "5. 'ETCH-02에서 최근에도 이랬어?'는 get_equipment_history로, '계속 밀리는 거야?'는 "
+    "get_metrology_trend로 직접 확인하고, 결과를 근거로 인용합니다 (예: '24h 내 동일 결함 5회 → 반복성').\n"
+    "6. 답변은 3~6문장 또는 번호 목록으로 간결하게. 질문이 모호해도 되묻지 말고, 이 검사에서 가장 "
+    "합리적인 다음 행동을 제안합니다."
 )
 
 
@@ -179,7 +187,11 @@ def stream_chat_about_inspection(
         yield {"type": "done", "reply": msg, "agent_mode": "stub", "tool_calls": []}
         return
 
-    image_urls = [u for u in [record.get("overlay_url"), record.get("roi_url")] if u]
+    # Attach the wafer image only on the opening message of a conversation. Re-sending
+    # it on every follow-up makes the model re-anchor on "describe this image" and
+    # answer generically (e.g. "이 이미지는 ...") instead of staying on the case.
+    is_opening_turn = not (history or [])
+    image_urls = [u for u in [record.get("overlay_url"), record.get("roi_url")] if u] if is_opening_turn else []
 
     system_content = _SYSTEM_PROMPT + "\n\n[검사 Evidence]\n" + _evidence_context(record, trace)
     if extra_context and extra_context.strip():

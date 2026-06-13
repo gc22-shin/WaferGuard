@@ -178,14 +178,18 @@ _TOOL_SCHEMAS: list[dict] = [
     },
 ]
 
-# Read-only lookup tools (Gap 1) — let the Agent actually run its playbook
-# ("동일 설비 반복 여부 확인", "최근 24h 트렌드 비교") instead of telling a human to.
+# Extra tools layered onto the inspection agent on top of the action tools above.
+# - Read-only lookups (Gap 1): let the Agent run its own playbook ("동일 설비 반복
+#   여부 확인", "최근 24h 트렌드 비교") instead of telling a human to.
+# - escalate_to_mlops (B-6): hand a confirmed fleet-level concern to the MLOps
+#   agent and fold its decision back in.
 # Reuses the schemas defined in tools.py to avoid drift.
 _LOOKUP_TOOL_NAMES = {
     "get_equipment_history",
     "get_metrology_trend",
     "get_mlops_state",
     "compare_with_past_wafer",
+    "escalate_to_mlops",
 }
 try:
     from app.services.tools import TOOL_SCHEMAS as _TOOLS_SCHEMAS  # noqa: PLC0415
@@ -210,13 +214,19 @@ _SYSTEM_PROMPT = """당신은 WaferGuard Fab Ops Agent입니다.
 4. 판단이 불확실하면 enqueue_for_review로 엔지니어에게 넘깁니다.
 5. 최종 판단은 한국어로 간결하게 작성합니다.
 6. 본 시뮬레이션에서 결함 분류는 입력값이며, Agent는 분류 결과에 대한 운영 판단을 시뮬레이션합니다.
+7. '과거 사람 피드백'이 제공되면 반드시 반영합니다. 같은 조치가 과거에 반려/오탐 처리됐다면 같은 권고를 반복하지 말고, 반려 사유를 근거로 다른 판단(예: 추가 조회 후 enqueue_for_review)을 고려합니다.
 
 조회 도구 활용 (사람에게 시키지 말고 직접 확인하세요):
 - 반복성 결함인지 판단하려면 get_equipment_history(equipment_id, defect_type)로 같은 설비의 최근 동일 결함 횟수를 직접 조회합니다.
 - 계측값이 이번만 튄 건지, 계속 밀리는 건지 구분하려면 get_metrology_trend(equipment_id, metric)로 추세를 확인합니다.
 - recommend_retrain을 호출하기 전에 get_mlops_state로 현재 모델 성능과 drift 증거를 먼저 확인합니다.
 - 과거 사례 이미지와 직접 대조가 필요하면 compare_with_past_wafer를 사용합니다.
-조회 결과를 최종 판단의 근거로 명시적으로 인용하세요 (예: "ETCH-02에서 24h 내 Scratch 5회 → 반복성, 설비 점검 우선")."""
+조회 결과를 최종 판단의 근거로 명시적으로 인용하세요 (예: "ETCH-02에서 24h 내 Scratch 5회 → 반복성, 설비 점검 우선").
+
+다른 에이전트로 위임 (멀티에이전트):
+- 문제가 개별 웨이퍼 차원을 넘어선다고 판단되면(같은 설비 반복성 결함을 get_equipment_history로 확인했거나, 계측 추세가 단발이 아니라 지속 drift로 보일 때) escalate_to_mlops(reason, equipment_id)로 MLOps 에이전트에 위임합니다.
+- MLOps 에이전트는 모델 성능·drift·계측 추세를 직접 분석해 재학습 필요 여부를 판단해 돌려줍니다. 그 결론(mlops_decision)을 최종 판단에 인용해, 개별 설비 조치와 fleet-level 조치를 함께 제시하세요.
+- 단발성으로 끝낼 문제까지 무분별하게 위임하지 마세요. 반복성·drift 근거가 모였을 때만 위임합니다."""
 
 # ---------------------------------------------------------------------------
 # LangGraph State
@@ -255,6 +265,7 @@ def _get_tool_registry() -> dict[str, Any]:
             "get_metrology_trend": tools.get_metrology_trend,
             "get_mlops_state": tools.get_mlops_state,
             "compare_with_past_wafer": tools.compare_with_past_wafer,
+            "escalate_to_mlops": tools.escalate_to_mlops,
         }
     except (ImportError, AttributeError) as exc:
         logger.warning("tools.py not available (%s); using no-op stubs.", exc)
@@ -275,6 +286,7 @@ def _stub_registry() -> dict[str, Any]:
         "get_metrology_trend": lambda **kwargs: _stub(**kwargs),
         "get_mlops_state": lambda **kwargs: _stub(**kwargs),
         "compare_with_past_wafer": lambda **kwargs: _stub(**kwargs),
+        "escalate_to_mlops": lambda **kwargs: _stub(**kwargs),
     }
 
 
@@ -330,13 +342,57 @@ def _build_evidence_text(evidence: dict) -> str:
     if rag_cases:
         lines.append("\n## 참고 사례 (RAG)")
         for case in rag_cases[:3]:
+            learned = " [운영 학습]" if case.get("learned") else ""
             lines.append(
-                f"  - [{case.get('defect_type', '?')}] {case.get('summary', case.get('content', ''))[:120]}"
+                f"  - [{case.get('defect_type', '?')}]{learned} {case.get('summary', case.get('content', ''))[:120]}"
             )
     else:
         lines.append("\n## 참고 사례 (RAG): 없음")
 
+    # Prior human feedback (B-5) — episodic memory so the agent learns from how
+    # engineers ruled on similar past cases instead of repeating rejected advice.
+    pc = evidence.get("process_context", {}) or {}
+    equipment_id = evidence.get("equipment_id") or pc.get("tool_id")
+    feedback_block = _human_feedback_block(equipment_id, evidence.get("defect_type"))
+    if feedback_block:
+        lines.append(feedback_block)
+
     return "\n".join(lines)
+
+
+_DECISION_LABEL = {
+    "approved": "승인",
+    "rejected": "반려",
+    "false_alarm": "오탐 처리",
+    "needs_review": "추가 리뷰",
+}
+
+
+def _human_feedback_block(equipment_id: str | None, defect_type: str | None) -> str:
+    """Render recent human decisions on similar cases, newest first.
+
+    Returns an empty string when there is no relevant feedback (so the section
+    only appears when it carries signal).
+    """
+    try:
+        from app.services.storage import recent_human_feedback  # noqa: PLC0415
+
+        items = recent_human_feedback(equipment_id=equipment_id, defect_type=defect_type, limit=4)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("human feedback lookup failed: %s", exc)
+        return ""
+    if not items:
+        return ""
+
+    out = ["\n## 과거 사람 피드백 (이 설비/결함 관련 — 판단에 반영)"]
+    for it in items:
+        decision = _DECISION_LABEL.get(it.get("decision", ""), it.get("decision", "?"))
+        tool = it.get("tool_name")
+        target = f"{tool} → " if tool else ""
+        reason = (it.get("reason") or "").strip()
+        reason_txt = f" (사유: {reason[:80]})" if reason else ""
+        out.append(f"  - {target}{decision}{reason_txt}")
+    return "\n".join(out)
 
 
 # ---------------------------------------------------------------------------
@@ -700,6 +756,12 @@ def _build_mlops_evidence(line_id: str) -> str:
     except Exception:  # noqa: BLE001
         pass
 
+    # Fleet-level human feedback (B-5): how engineers ruled on past retrain
+    # recommendations, so the agent doesn't re-recommend something just rejected.
+    feedback_block = _human_feedback_block(None, None)
+    if feedback_block:
+        lines.append(feedback_block)
+
     return "\n".join(lines)
 
 
@@ -883,5 +945,159 @@ def stream_mlops_agent(line_id: str = "ALL", use_llm: bool = True, autonomy: str
             "trace_id": trace_id,
             "agent_kind": "mlops",
             "autonomy": autonomy,
+        }
+        return
+
+
+# ---------------------------------------------------------------------------
+# Inspection agent — streaming variant (B-7)
+# ---------------------------------------------------------------------------
+# The flagship per-wafer agent previously only ran in a background thread while
+# the UI polled for the persisted trace. This streams the same loop so the
+# situation-judgment → evidence → tool-exec flow is visible live, reusing the
+# SSE event contract (tool_call / tool_result / token / done) the chat/MLOps
+# streams already use.
+
+_INSPECTION_STREAM_MAX_ITERATIONS = 5
+
+
+def _summarize_inspection_tool(name: str, result: object) -> str:
+    if isinstance(result, list):
+        return f"유사 사례 {len(result)}건 반환"
+    if not isinstance(result, dict):
+        return str(result)[:80] if result is not None else ""
+    if result.get("error"):
+        return f"오류: {result['error']}"
+    if name == "get_equipment_history":
+        rec = " · 반복성" if result.get("is_recurring") else ""
+        return (
+            f"{result.get('equipment_id')} {result.get('window_hours')}h: "
+            f"검사 {result.get('total_inspections')}건, 동일결함 {result.get('same_defect_count')}회{rec}"
+        )
+    if name == "get_metrology_trend":
+        return f"{result.get('metric')} {result.get('trend')} · Δ{result.get('delta')} ({result.get('pct_change')}%, n={result.get('n')})"
+    if name == "get_mlops_state":
+        pm = result.get("production_model") or {}
+        de = result.get("latest_drift_event") or {}
+        return f"운영모델 F1 {pm.get('f1_score', '?')} · drift {de.get('status', '?')}"
+    if name in ("inspect_image", "compare_with_past_wafer"):
+        obs = result.get("observation", "")
+        return (obs[:80] + "…") if len(obs) > 80 else (obs or "이미지 분석 완료")
+    if name == "enqueue_for_review":
+        return "검토 큐 등록"
+    if name == "trigger_critical_alert":
+        return f"긴급 알림 승인 대기 ({result.get('approval_id', 'pending')})"
+    if name == "recommend_retrain":
+        return f"재학습 권고 ({result.get('status', result.get('mode', '?'))})"
+    if name == "escalate_to_mlops":
+        used = result.get("mlops_tools_used") or []
+        dec = (result.get("mlops_decision") or "").strip().replace("\n", " ")
+        dec_short = (dec[:70] + "…") if len(dec) > 70 else dec
+        return f"MLOps 에이전트 위임 → 도구 {len(used)}개 사용 · {dec_short}"
+    return "완료"
+
+
+def stream_inspection_agent(evidence: dict) -> Iterator[dict]:
+    """Streaming inspection agent: yields SSE-friendly events as it reasons.
+
+    Event types: tool_call / tool_result / token / done — identical contract to
+    the chat and MLOps streams so the frontend can reuse its handler.
+    """
+    inspection_id = evidence.get("inspection_id", "unknown")
+    image_urls: list[str] = evidence.get("image_urls", []) or []
+    evidence_text = _build_evidence_text(evidence)
+    use_llm = bool(evidence.get("use_llm", True))
+    has_key = bool(os.environ.get("LUXIA_API_KEY", "").strip())
+
+    if not use_llm or not has_key:
+        rag_cases = evidence.get("rag_cases") or []
+        first_action = (
+            rag_cases[0].get("action") if rag_cases and isinstance(rag_cases[0], dict) else None
+        ) or "엔지니어 검토 큐에서 수동 확인"
+        msg = (
+            f"[룰 기반 판단 — LLM 미사용] {evidence.get('defect_type', '결함')} 패턴, "
+            f"위험도 {evidence.get('risk_level', '?')} "
+            f"(score {evidence.get('risk_score', 0):.2f}). 권장 우선 조치: {first_action}."
+        )
+        for chunk in _chunk_text(msg):
+            yield {"type": "token", "text": chunk}
+        yield {"type": "done", "final_action": msg, "agent_mode": "stub", "tool_calls": [], "agent_kind": "inspection"}
+        return
+
+    messages: list[dict] = [
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user", "content": f"다음 Evidence를 분석하고 적절한 대응 action을 결정하세요.\n\n{evidence_text}"},
+    ]
+    registry = _get_tool_registry()
+    tool_calls_log: list[dict] = []
+
+    for iteration in range(_INSPECTION_STREAM_MAX_ITERATIONS):
+        last_turn = iteration == _INSPECTION_STREAM_MAX_ITERATIONS - 1
+        resp = luxia_client.chat_with_tools(
+            messages,
+            tools=None if last_turn else _TOOL_SCHEMAS,
+            image_urls=image_urls if iteration == 0 else None,
+        )
+        msg = resp.get("choices", [{}])[0].get("message", {}) or {}
+        tool_calls = msg.get("tool_calls") if not last_turn else None
+
+        if tool_calls:
+            messages.append(msg)
+            for tc in tool_calls:
+                fn = tc.get("function", {})
+                name = fn.get("name", "")
+                try:
+                    args = json.loads(fn.get("arguments", "{}"))
+                except json.JSONDecodeError:
+                    args = {}
+                yield {"type": "tool_call", "name": name, "args": args}
+
+                tool_fn = registry.get(name)
+                if tool_fn is None:
+                    result: object = {"error": f"unknown tool: {name}"}
+                else:
+                    try:
+                        result = tool_fn(**args)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("inspection agent tool %s failed: %s", name, exc)
+                        result = {"error": str(exc)}
+
+                tool_calls_log.append({"name": name, "args": args, "result": result})
+                yield {"type": "tool_result", "name": name, "summary": _summarize_inspection_tool(name, result), "result": result}
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", name),
+                        "name": name,
+                        "content": json.dumps(result, ensure_ascii=False),
+                    }
+                )
+            continue
+
+        content = msg.get("content") or "판단 결과를 생성하지 못했습니다."
+        for chunk in _chunk_text(content):
+            yield {"type": "token", "text": chunk}
+
+        trace = {
+            "inspection_id": inspection_id,
+            "agent_kind": "inspection",
+            "messages": messages + [{"role": "assistant", "content": content}],
+            "tool_calls": tool_calls_log,
+            "final_action": content,
+            "agent_mode": "llm",
+        }
+        try:
+            trace_id = insert_agent_trace(inspection_id, trace)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to persist inspection agent trace: %s", exc)
+            trace_id = "trace-error"
+
+        yield {
+            "type": "done",
+            "final_action": content,
+            "agent_mode": "llm",
+            "tool_calls": tool_calls_log,
+            "trace_id": trace_id,
+            "agent_kind": "inspection",
         }
         return

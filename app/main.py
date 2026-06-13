@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import threading
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +21,7 @@ from app.services.pipeline import run_inspection
 from app.services.rag_eval import rag_evaluation_set
 from app.services.defect_chat import chat_about_inspection, stream_chat_about_inspection
 from app.services.schemas import (
+    AgentStreamRequest,
     AutomationTickRequest,
     DemoSeedRequest,
     DriftRequest,
@@ -47,6 +50,25 @@ from app.services.storage import (
 
 ensure_runtime_dirs()
 init_db()
+
+
+def _seed_rag_index_background() -> None:
+    """Seed the vector RAG corpus once at startup, off the request path.
+
+    Embedding the corpus needs network calls, so it runs in a daemon thread —
+    the app boots immediately and retrieval falls back to the deterministic
+    library until the index is ready.
+    """
+    try:
+        from app.services.rag import ensure_rag_index  # noqa: PLC0415
+
+        result = ensure_rag_index()
+        logging.getLogger(__name__).info("RAG index seed: %s", result)
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger(__name__).warning("RAG index seed failed: %s", exc)
+
+
+threading.Thread(target=_seed_rag_index_background, daemon=True).start()
 
 app = FastAPI(
     title="WaferGuard Agent Simulation API",
@@ -157,6 +179,11 @@ def review(inspection_id: str, request: ReviewRequest) -> dict[str, object]:
 
 
 def _ingest_reviewed_case(record: dict[str, object], request: ReviewRequest) -> dict[str, object] | None:
+    # Only confirmed outcomes become retrievable knowledge. "needs_review" is an
+    # open state, not a resolved decision — writing it back would teach the RAG
+    # corpus from cases the engineer hasn't actually concluded.
+    if request.decision not in ("approved", "false_alarm"):
+        return {"skipped": True, "reason": "decision_not_confirmed"}
     try:
         from app.services.tools import save_case_to_knowledge  # noqa: PLC0415
 
@@ -371,6 +398,24 @@ def reject_action(approval_id: str) -> dict[str, object]:
     return row
 
 
+def _evidence_from_record(record: dict, use_llm: bool = True) -> dict[str, object]:
+    """Rebuild the agent Evidence dict from a persisted inspection record."""
+    return {
+        "inspection_id": record.get("id"),
+        "defect_type": record.get("defect_type"),
+        "equipment_id": record.get("equipment_id"),
+        "risk_level": record.get("risk_level"),
+        "risk_score": record.get("risk_score"),
+        "confidence": record.get("confidence"),
+        "metrology_rule_hits": record.get("action_card", {}).get("metrology_rule_hits", []),
+        "rag_cases": record.get("cases", []),
+        "process_context": record.get("process_context", {}),
+        "metrology": record.get("metrology", {}),
+        "image_urls": [url for url in [record.get("overlay_url"), record.get("roi_url")] if url],
+        "use_llm": use_llm,
+    }
+
+
 @app.post("/api/v1/inspect/{inspection_id}/re-agent")
 def re_agent(inspection_id: str) -> dict[str, object]:
     """Manually trigger Agent re-analysis on any inspection in the review queue."""
@@ -381,21 +426,7 @@ def re_agent(inspection_id: str) -> dict[str, object]:
     try:
         from app.services.agent import run as agent_run  # noqa: PLC0415
 
-        evidence = {
-            "inspection_id": inspection_id,
-            "defect_type": record.get("defect_type"),
-            "risk_level": record.get("risk_level"),
-            "risk_score": record.get("risk_score"),
-            "confidence": record.get("confidence"),
-            "metrology_rule_hits": record.get("action_card", {}).get("metrology_rule_hits", []),
-            "rag_cases": record.get("cases", []),
-            "process_context": record.get("process_context", {}),
-            "metrology": record.get("metrology", {}),
-            "image_urls": [
-                url for url in [record.get("overlay_url"), record.get("roi_url")] if url
-            ],
-        }
-        agent_result = agent_run(evidence)
+        agent_result = agent_run(_evidence_from_record(record))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Agent re-run failed: {exc}") from exc
 
@@ -406,3 +437,33 @@ def re_agent(inspection_id: str) -> dict[str, object]:
         "agent_trace_id": agent_result.get("trace_id"),
         "agent_mode": agent_result.get("agent_mode"),
     }
+
+
+@app.post("/api/v1/inspect/{inspection_id}/agent/stream")
+def inspection_agent_stream(inspection_id: str, request: AgentStreamRequest) -> StreamingResponse:
+    """Run the flagship inspection agent live, streaming its reasoning as SSE.
+
+    Emits tool_call / tool_result / token / done events — the same contract the
+    chat and MLOps streams use — so the situation-judgment → evidence → tool
+    flow is visible instead of only landing as a polled trace.
+    """
+    record = get_inspection(inspection_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    evidence = _evidence_from_record(record, use_llm=request.use_llm)
+
+    def event_source():
+        try:
+            from app.services.agent import stream_inspection_agent  # noqa: PLC0415
+
+            for event in stream_inspection_agent(evidence):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            err = {"type": "done", "final_action": f"오류: 실행 실패 ({exc})", "agent_mode": "error", "tool_calls": [], "agent_kind": "inspection"}
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

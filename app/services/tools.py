@@ -464,6 +464,47 @@ def save_case_to_knowledge(
 
 
 # ---------------------------------------------------------------------------
+# Tool 11: escalate_to_mlops  (B-6 — multi-agent handoff)
+# ---------------------------------------------------------------------------
+
+def escalate_to_mlops(reason: str, line_id: str = "ALL", equipment_id: str | None = None) -> dict:
+    """Hand off a fleet-level concern from the per-wafer inspection agent to the
+    MLOps agent and return its decision.
+
+    The inspection agent calls this when a single wafer is no longer the right
+    unit of analysis — e.g. it has confirmed a *recurring* defect on one tool, or
+    a metrology trend that looks like input drift rather than a one-off. The
+    MLOps agent then runs its own loop (model performance + drift + trend) and
+    decides whether to recommend_retrain (approval-gated). Its judgment comes
+    back here as evidence the inspection agent can cite in its final action.
+
+    Recursion is impossible: the MLOps agent's exposed schema does not include
+    this tool, so the handoff is strictly one-way (inspection → MLOps).
+    """
+    try:
+        from app.services.agent import run_mlops_agent  # noqa: PLC0415
+    except ImportError as exc:
+        return {"ok": False, "error": f"mlops agent unavailable: {exc}"}
+
+    context = reason if not equipment_id else f"{reason} (설비 {equipment_id})"
+    try:
+        result = run_mlops_agent(line_id=line_id, use_llm=True, autonomy="approval")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("escalate_to_mlops run failed: %s", exc)
+        return {"ok": False, "error": str(exc), "reason": context}
+
+    return {
+        "ok": True,
+        "delegated_to": "mlops_agent",
+        "reason": context,
+        "mlops_decision": result.get("final_action"),
+        "mlops_tools_used": [tc.get("name") for tc in (result.get("tool_calls") or [])],
+        "mlops_trace_id": result.get("trace_id"),
+        "mlops_mode": result.get("agent_mode"),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Registry + Schemas
 # ---------------------------------------------------------------------------
 
@@ -478,6 +519,7 @@ TOOL_REGISTRY: dict[str, Callable] = {
     "get_mlops_state": get_mlops_state,
     "compare_with_past_wafer": compare_with_past_wafer,
     "save_case_to_knowledge": save_case_to_knowledge,
+    "escalate_to_mlops": escalate_to_mlops,
 }
 
 TOOL_SCHEMAS: list[dict] = [
@@ -690,6 +732,30 @@ TOOL_SCHEMAS: list[dict] = [
                     "defect_type": {"type": "string", "description": "결함 유형 (선택)"},
                 },
                 "required": ["title", "summary", "action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "escalate_to_mlops",
+            "description": (
+                "개별 웨이퍼 차원을 넘어선 fleet-level 문제(같은 설비 반복성 결함, 입력 분포 drift 의심, "
+                "모델 성능 저하 징후)를 MLOps 에이전트에 위임한다. MLOps 에이전트가 모델 성능·drift·계측 추세를 "
+                "직접 분석해 재학습 필요 여부를 판단하고 그 결론을 돌려준다. "
+                "반복성을 먼저 get_equipment_history로 확인한 뒤, 단발 조치로 끝낼 문제가 아닐 때만 호출한다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "위임 사유 (예: 'ETCH-02에서 Scratch 24h 내 5회 반복 → fleet drift 평가 필요')",
+                    },
+                    "line_id": {"type": "string", "description": "대상 라인 (선택, 기본 ALL)", "default": "ALL"},
+                    "equipment_id": {"type": "string", "description": "관련 설비 ID (선택)"},
+                },
+                "required": ["reason"],
             },
         },
     },

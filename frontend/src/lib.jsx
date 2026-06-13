@@ -259,6 +259,11 @@ export const TOOL_META = {
   get_mlops_state:         { icon: "cpu",      label: "MLOps 상태 조회" },
   compare_with_past_wafer: { icon: "zoom",     label: "웨이퍼 이미지 비교" },
   recommend_retrain:       { icon: "refresh",  label: "재학습 권고" },
+  enqueue_for_review:      { icon: "box",      label: "검토 큐 등록" },
+  trigger_critical_alert:  { icon: "alert",    label: "긴급 알림" },
+  escalate_to_mlops:       { icon: "bot",      label: "MLOps 에이전트로 위임" },
+  inspect_image:           { icon: "zoom",     label: "웨이퍼 이미지 분석" },
+  save_case_to_knowledge:  { icon: "history",  label: "지식베이스 저장" },
 };
 
 function _argText(args) {

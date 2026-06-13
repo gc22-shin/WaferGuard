@@ -135,7 +135,33 @@ function MetrologyTable({ rows }) {
   );
 }
 
-export default function InspectionView() {
+function AgentNudge({ insp, onOpenAgent }) {
+  const high = insp.riskLevel === "High";
+  if (!high && insp.riskLevel !== "Medium") return null;
+  const c = high ? "var(--high)" : "var(--med)";
+  const bg = high ? "var(--high-dim)" : "var(--med-dim)";
+  return (
+    <div className="fade-in" style={{
+      display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+      borderRadius: 9, background: bg, border: `1px solid ${c}`,
+    }}>
+      <span className="pulse-high" style={{ width: 9, height: 9, borderRadius: 99, background: c, flex: "none", boxShadow: `0 0 8px ${c}` }} />
+      <RiskBadge level={insp.riskLevel} />
+      <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--text)", lineHeight: 1.5 }}>
+        <strong>{high ? "High 리스크 검사입니다." : "Medium 리스크 — 검토가 필요합니다."}</strong>{" "}
+        <span style={{ color: "var(--text-2)" }}>
+          {insp.defectType} · {insp.wafer} — 검사 에이전트에서 추정 원인과 권장 액션을 확인하세요.
+        </span>
+      </div>
+      <button className="btn btn-accent" onClick={() => onOpenAgent && onOpenAgent(insp.inspectionId)}
+        disabled={!insp.inspectionId} style={{ flex: "none", gap: 6 }}>
+        <Icon name="bot" size={14} />검사 에이전트에서 확인
+      </button>
+    </div>
+  );
+}
+
+export default function InspectionView({ onOpenAgent }) {
   const { latest, tick, settings, updateSettings, inFlight, runOnce } = useStream();
   const [insp, setInsp]         = useState(defaultInspection);
   const [scanning, setScanning] = useState(false);
@@ -185,6 +211,8 @@ export default function InspectionView() {
           </button>
         </div>
       </div>
+
+      <AgentNudge insp={insp} onOpenAgent={onOpenAgent} />
 
       {/* main grid — imagery and metrology split 50/50 */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "start" }}>

@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import random
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+_CORPUS_PATH = Path(__file__).resolve().parent.parent / "data" / "rag_corpus.json"
 
 # Hand-curated, high-signal reference cases. These are seeded first per defect
 # type and carry a higher base relevance so they tend to surface in retrieval.
@@ -310,3 +317,143 @@ def search_cases(defect_type: str, line_id: str) -> list[dict]:
             }
         )
     return results[:3]
+
+
+# ---------------------------------------------------------------------------
+# Vector RAG (A-2): unify the main pipeline onto embedding retrieval, with the
+# deterministic library above as a graceful fallback. Same display shape, so
+# report/action_card/chat are unaffected. Learned cases written back by the
+# review loop (save_case_to_knowledge) become retrievable here too — closing
+# the operation→knowledge→retrieval loop end to end.
+# ---------------------------------------------------------------------------
+
+
+def _vector_query_text(defect_type: str, line_id: str, query_text: str | None) -> str:
+    if query_text and query_text.strip():
+        return query_text.strip()
+    return f"{defect_type} 결함, {line_id} 라인 공정 이상 대응 사례와 권장 조치"
+
+
+def _doc_to_case(doc: dict, score: float, line_id: str) -> dict:
+    """Map a rag_documents row into the legacy display shape."""
+    meta = doc.get("metadata") or {}
+    content = doc.get("content", "") or ""
+    title = meta.get("title") or (content.split(":", 1)[0][:48] if content else "유사 사례")
+    learned = meta.get("source") == "engineer_confirmed"
+    return {
+        "title": title,
+        "summary": meta.get("summary") or content,
+        "action": meta.get("action") or "",
+        "case_id": doc.get("id"),
+        "equipment": meta.get("equipment_id") or meta.get("equipment"),
+        "date": meta.get("date"),
+        "similarity": round(float(score), 2),
+        "line_context": f"{line_id} 최근 24시간 추세와 함께 비교",
+        "source": meta.get("source", "rag_documents"),
+        "learned": learned,
+    }
+
+
+def retrieve_cases(
+    defect_type: str,
+    line_id: str,
+    query_text: str | None = None,
+    k: int = 3,
+) -> list[dict]:
+    """Unified Top-k retrieval: embed → cosine (query_rag) → rerank.
+
+    Falls back to the deterministic library (``search_cases``) when no API key
+    is configured, the vector index is empty, or anything in the path errors —
+    so the pipeline never breaks and degrades cleanly.
+    """
+    try:
+        from app.services import luxia_client, storage  # noqa: PLC0415
+    except ImportError:
+        return search_cases(defect_type, line_id)
+
+    if luxia_client._api_key() is None:
+        return search_cases(defect_type, line_id)
+
+    try:
+        query = _vector_query_text(defect_type, line_id, query_text)
+        vecs = luxia_client.embed([query])
+        qv = vecs[0] if vecs else []
+        if not qv or not any(qv):
+            return search_cases(defect_type, line_id)
+
+        raw = storage.query_rag(qv, k=max(k * 4, 12))
+        if not raw:
+            return search_cases(defect_type, line_id)
+
+        try:
+            rr = luxia_client.rerank(query, [d.get("content", "") for d in raw], top_k=k)
+            ordered = [
+                (raw[r["index"]], r.get("relevance_score", 0.0))
+                for r in rr
+                if 0 <= int(r.get("index", -1)) < len(raw)
+            ]
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("rerank skipped in retrieve_cases: %s", exc)
+            ordered = [(d, d.get("similarity", 0.0)) for d in raw[:k]]
+
+        results = [_doc_to_case(doc, score, line_id) for doc, score in ordered[:k]]
+        return results or search_cases(defect_type, line_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("retrieve_cases vector path failed (%s) — using legacy library", exc)
+        return search_cases(defect_type, line_id)
+
+
+def ensure_rag_index(force: bool = False) -> dict:
+    """Seed rag_documents from the curated corpus if empty. Idempotent.
+
+    No-op without an API key (zero-vector embeddings carry no signal). Intended
+    to run once in a background thread at startup so the vector path above has a
+    corpus to search instead of silently falling back.
+    """
+    try:
+        from app.services import luxia_client, storage  # noqa: PLC0415
+    except ImportError:
+        return {"seeded": 0, "reason": "imports unavailable"}
+
+    if luxia_client._api_key() is None:
+        return {"seeded": 0, "reason": "no_api_key"}
+
+    try:
+        existing = storage.count_rag_documents()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("count_rag_documents failed: %s", exc)
+        existing = 0
+    if existing > 0 and not force:
+        return {"seeded": 0, "reason": "already_indexed", "existing": existing}
+
+    try:
+        corpus = json.loads(_CORPUS_PATH.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("rag corpus load failed: %s", exc)
+        return {"seeded": 0, "reason": str(exc)}
+
+    written = 0
+    batch_size = 16
+    for i in range(0, len(corpus), batch_size):
+        batch = corpus[i : i + batch_size]
+        texts = [d.get("content", "") for d in batch]
+        try:
+            embeddings = luxia_client.embed(texts)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("embed batch failed: %s", exc)
+            embeddings = [None] * len(batch)
+        for doc, emb in zip(batch, embeddings, strict=False):
+            try:
+                storage.upsert_rag_document(
+                    doc_id=doc["id"],
+                    content=doc.get("content", ""),
+                    defect_type=doc.get("defect_type"),
+                    embedding=emb,
+                    metadata=doc.get("metadata", {}),
+                )
+                written += 1
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("rag upsert failed for %s: %s", doc.get("id"), exc)
+
+    logger.info("RAG index seeded: %d/%d documents", written, len(corpus))
+    return {"seeded": written, "total": len(corpus)}

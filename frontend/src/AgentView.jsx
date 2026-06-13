@@ -203,21 +203,6 @@ function CauseCard({ idx, cause, onEvidence }) {
   );
 }
 
-function ActionRow({ idx, action, onExecute, onEvidence, disabled, busy }) {
-  return (
-    <div className="panel-inset" style={{ padding: "6px 9px", display: "flex", alignItems: "center", gap: 7 }}>
-      <span style={{ fontSize: 11.5, color: "var(--text)", fontWeight: 500, flex: 1, minWidth: 0, lineHeight: 1.45 }}>{action.label}</span>
-      <EvidenceTrigger source={action.source} onOpen={() => onEvidence({ kind: "action", label: action.label, source: action.source })} />
-      <button className={`btn ${idx === 0 && !disabled ? "btn-accent" : ""}`}
-        disabled={disabled || busy}
-        onClick={() => onExecute(action)}
-        style={{ padding: "3px 9px", fontSize: 10.5, flex: "none", opacity: disabled ? .5 : 1 }}>
-        <Icon name="play" size={10} />실행
-      </button>
-    </div>
-  );
-}
-
 /* ---------- chat ---------- */
 
 function DefectChat({ inspectionId, llmOn, causes, actions }) {
@@ -384,6 +369,246 @@ function DefectChat({ inspectionId, llmOn, causes, actions }) {
   );
 }
 
+/* ---------- live agent run (B-7): stream the flagship inspection agent ----------
+   Split into a hook (state + streaming) and a presentational body so the run can
+   live as the first section of the unified Agent panel, with its re-run control
+   hoisted into that panel's header. */
+
+function useAgentRun({ inspectionId, llmOn, trace }) {
+  const [tools, setTools] = useState([]);
+  const [text, setText] = useState("");
+  const [running, setRunning] = useState(false);
+  const [ran, setRan] = useState(false);
+
+  // reset when switching cases — show the polled background trace until re-run
+  useEffect(() => { setRan(false); setTools([]); setText(""); setRunning(false); }, [inspectionId]);
+
+  const traceTools = (trace?.tool_calls || []).map(tc => ({
+    name: tc.name, args: tc.args, status: "done", summary: "", result: tc.result,
+  }));
+  const displayTools = ran ? tools : traceTools;
+  const displayText = ran ? text : (trace?.final_action || "");
+  const hasTrace = !!trace?.final_action;
+
+  async function run() {
+    if (running || !inspectionId || !llmOn) return;
+    setRan(true); setRunning(true); setTools([]); setText("");
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/inspect/${inspectionId}/agent/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ use_llm: llmOn }),
+      });
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const blocks = buf.split("\n\n");
+        buf = blocks.pop() || "";
+        for (const block of blocks) {
+          const line = block.split("\n").find(l => l.startsWith("data:"));
+          if (!line) continue;
+          let ev;
+          try { ev = JSON.parse(line.slice(5).trim()); } catch { continue; }
+          if (ev.type === "tool_call") {
+            setTools(t => [...t, { name: ev.name, args: ev.args, status: "running" }]);
+          } else if (ev.type === "tool_result") {
+            setTools(t => {
+              const c = t.slice();
+              for (let i = c.length - 1; i >= 0; i--) {
+                if (c[i].status === "running") { c[i] = { ...c[i], status: "done", summary: ev.summary, result: ev.result }; break; }
+              }
+              return c;
+            });
+          } else if (ev.type === "token") {
+            setText(s => s + ev.text);
+          } else if (ev.type === "done") {
+            setText(s => ev.final_action || s);
+          }
+        }
+      }
+    } catch (e) {
+      setText(`오류: 실행 실패 (${e.message})`);
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  const runLabel = running ? "실행 중…" : (hasTrace || ran ? "다시 실행" : "라이브 실행");
+  return { displayTools, displayText, running, ran, hasTrace, run, runLabel };
+}
+
+function AgentRunBody({ state, llmOn, traceLoading }) {
+  const { displayTools, displayText, running } = state;
+  if (!llmOn) {
+    return (
+      <div style={{ fontSize: 11.5, color: "var(--text-3)", lineHeight: 1.7, padding: "4px 2px" }}>
+        설정에서 'Agent LLM 분석'을 켜면 에이전트의 판단 과정(증거 해석 → 도구 호출 → 최종 판단)을 실시간으로 볼 수 있습니다.
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {displayTools.length > 0 && <ToolCalls calls={displayTools} />}
+      {running && displayTools.length === 0 && !displayText && (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--text-3)", fontSize: 11.5 }}>
+          <Icon name="refresh" size={12} style={{ animation: "spin 1s linear infinite" }} />증거 분석 중…
+        </span>
+      )}
+      {displayText
+        ? <div style={{ fontSize: 12, lineHeight: 1.65, color: "var(--text)" }}>
+            <Markdown text={displayText} />{running && <span className="blink-cursor">▍</span>}
+          </div>
+        : !running && (
+          <div style={{ fontSize: 11.5, color: "var(--text-3)", lineHeight: 1.7, padding: "4px 2px" }}>
+            {traceLoading
+              ? "백그라운드 에이전트 판단을 불러오는 중…"
+              : "‘라이브 실행’을 누르면 에이전트가 증거를 해석하고 도구를 호출하는 과정을 실시간으로 보여줍니다."}
+          </div>
+        )}
+    </div>
+  );
+}
+
+/* ---------- response action: select a recommended action (or write your own),
+   record the decision, and confirm the case was written back into the RAG corpus ---------- */
+
+const DECISION_OPTIONS = [
+  { id: "approved",     label: "조치 완료", color: "var(--low)" },
+  { id: "false_alarm",  label: "오탐 처리", color: "var(--text-3)" },
+  { id: "needs_review", label: "추가 리뷰", color: "var(--med)" },
+];
+
+function RadioDot({ on }) {
+  return (
+    <span style={{
+      width: 13, height: 13, borderRadius: 99, flex: "none",
+      border: `2px solid ${on ? "var(--accent)" : "var(--border-strong)"}`,
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+    }}>
+      {on && <span style={{ width: 6, height: 6, borderRadius: 99, background: "var(--accent)" }} />}
+    </span>
+  );
+}
+
+function RagWriteResult({ reviewResult }) {
+  const ks = reviewResult?.knowledge_saved;
+  if (!ks) return null;
+  if (ks.skipped) {
+    return (
+      <div className="panel-inset" style={{ padding: "8px 11px", fontSize: 10.5, color: "var(--text-3)", lineHeight: 1.5 }}>
+        '추가 리뷰'는 확정된 결론이 아니므로 RAG 지식베이스에는 기록하지 않았습니다.
+      </div>
+    );
+  }
+  if (!ks.ok) return null;
+  return (
+    <div className="panel-inset fade-in" style={{ padding: "9px 11px", display: "flex", flexDirection: "column", gap: 4, border: "1px solid var(--accent-line)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+        <span className="chip" style={{ fontSize: 8.5, color: "var(--accent)", borderColor: "var(--accent-line)" }}>RAG 지식베이스 기록됨</span>
+        {ks.embedded && <span className="chip" style={{ fontSize: 8.5, color: "var(--low)", borderColor: "var(--low)" }}>임베딩 완료</span>}
+        {ks.doc_id && <span className="mono" style={{ fontSize: 9, color: "var(--text-3)", marginLeft: "auto" }}>{ks.doc_id}</span>}
+      </div>
+      {ks.content && <div style={{ fontSize: 11, color: "var(--text-2)", lineHeight: 1.5 }}>{ks.content}</div>}
+      <div style={{ fontSize: 9.5, color: "var(--text-3)" }}>이후 유사 검사의 RAG 검색에서 이 사례가 함께 검색됩니다.</div>
+    </div>
+  );
+}
+
+function ActionSelector({ actions, decided, busy, onExecute, onEvidence, reviewResult, reviewNote }) {
+  const [sel, setSel] = useState(0);        // index into actions, or "custom"
+  const [custom, setCustom] = useState("");
+  const [decision, setDecision] = useState("approved");
+
+  // already recorded — show the decision + what was written to the RAG corpus
+  if (decided) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div className="panel-inset" style={{ padding: "9px 11px", display: "flex", alignItems: "center", gap: 8 }}>
+          <Icon name="check" size={14} style={{ color: "var(--low)" }} />
+          <span style={{ fontSize: 11.5, color: "var(--text)" }}>조치가 기록되었습니다.</span>
+        </div>
+        {reviewNote && <div style={{ fontSize: 11, color: "var(--text-2)", padding: "0 2px", lineHeight: 1.5 }}>기록된 조치: {reviewNote}</div>}
+        <RagWriteResult reviewResult={reviewResult} />
+      </div>
+    );
+  }
+
+  const isCustom = sel === "custom";
+  const chosenLabel = isCustom ? custom.trim() : (actions[sel]?.label || "");
+  const canRun = !busy && chosenLabel.length > 0;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        {actions.map((a, i) => (
+          <button key={i} onClick={() => setSel(i)} className="focusable"
+            style={{
+              display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
+              padding: "7px 9px", borderRadius: 7, cursor: "pointer", font: "inherit",
+              border: `1px solid ${sel === i ? "var(--accent-line)" : "var(--border-soft)"}`,
+              background: sel === i ? "var(--accent-dim)" : "var(--panel-2)",
+            }}>
+            <RadioDot on={sel === i} />
+            {i === 0 && <span className="chip" style={{ fontSize: 8.5, color: "var(--accent)", borderColor: "var(--accent-line)", flex: "none" }}>권장</span>}
+            <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, color: "var(--text)", lineHeight: 1.45 }}>{a.label}</span>
+            <EvidenceTrigger source={a.source} onOpen={() => onEvidence({ kind: "action", label: a.label, source: a.source })} />
+          </button>
+        ))}
+        <button onClick={() => setSel("custom")} className="focusable"
+          style={{
+            display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left",
+            padding: "7px 9px", borderRadius: 7, cursor: "pointer", font: "inherit",
+            border: `1px solid ${isCustom ? "var(--accent-line)" : "var(--border-soft)"}`,
+            background: isCustom ? "var(--accent-dim)" : "var(--panel-2)",
+          }}>
+          <RadioDot on={isCustom} />
+          <span style={{ fontSize: 11.5, color: "var(--text)" }}>직접 입력</span>
+        </button>
+        {isCustom && (
+          <input autoFocus value={custom} onChange={e => setCustom(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing && canRun) onExecute({ label: chosenLabel, decision }); }}
+            placeholder="조치 내용을 입력하세요 (지식베이스에 그대로 기록됩니다)"
+            style={{
+              background: "var(--panel-2)", border: "1px solid var(--border-strong)", borderRadius: 7,
+              padding: "8px 11px", color: "var(--text)", font: "inherit", fontSize: 11.5,
+            }} />
+        )}
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+        <span className="label-cap">처리 구분</span>
+        {DECISION_OPTIONS.map(o => (
+          <button key={o.id} onClick={() => setDecision(o.id)} className="focusable"
+            style={{
+              padding: "3px 9px", fontSize: 10.5, borderRadius: 99, cursor: "pointer", font: "inherit",
+              border: `1px solid ${decision === o.id ? o.color : "var(--border-soft)"}`,
+              background: decision === o.id ? "var(--accent-dim)" : "transparent",
+              color: decision === o.id ? o.color : "var(--text-3)", fontWeight: decision === o.id ? 600 : 500,
+            }}>
+            {o.label}
+          </button>
+        ))}
+        <button className="btn btn-accent" disabled={!canRun}
+          onClick={() => onExecute({ label: chosenLabel, decision })}
+          style={{ marginLeft: "auto", padding: "5px 12px", fontSize: 11, opacity: canRun ? 1 : .5 }}>
+          {busy
+            ? <Icon name="refresh" size={12} style={{ animation: "spin 1s linear infinite" }} />
+            : <Icon name="check" size={12} />}
+          기록 & RAG 반영
+        </button>
+      </div>
+      <div style={{ fontSize: 10, color: "var(--text-3)", lineHeight: 1.5 }}>
+        '조치 완료' 또는 '오탐 처리'로 기록하면 이 사례가 RAG 지식베이스에 저장되어 이후 유사 검사 검색에 활용됩니다.
+      </div>
+    </div>
+  );
+}
+
 /* ---------- main view ---------- */
 
 export default function AgentView({ focusId, onFocusHandled }) {
@@ -395,6 +620,9 @@ export default function AgentView({ focusId, onFocusHandled }) {
   const [traceLoading, setTraceLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [evidence, setEvidence] = useState(null);
+  // result of the last review POST — carries knowledge_saved so we can confirm
+  // the case was written into the RAG corpus
+  const [reviewResult, setReviewResult] = useState(null);
 
   // picking a case collapses the left list; the collapsed bar re-expands it
   function selectRow(id) {
@@ -431,6 +659,7 @@ export default function AgentView({ focusId, onFocusHandled }) {
   useEffect(() => {
     setTrace(null);
     setEvidence(null);
+    setReviewResult(null);
     if (!selectedId) return;
     let cancelled = false;
     let attempts = 0;
@@ -453,15 +682,16 @@ export default function AgentView({ focusId, onFocusHandled }) {
     return () => { cancelled = true; };
   }, [selectedId]);
 
-  async function executeAction(action) {
-    if (!selectedId || busy) return;
+  async function executeAction({ label, decision }) {
+    if (!selectedId || busy || !label) return;
     setBusy(true);
     try {
-      await fetch(`${API_BASE}/api/v1/review/${selectedId}`, {
+      const res = await fetch(`${API_BASE}/api/v1/review/${selectedId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision: "approved", reviewer: "operator", note: `액션 실행: ${action.label}` }),
+        body: JSON.stringify({ decision: decision || "approved", reviewer: "operator", note: label }),
       });
+      if (res.ok) setReviewResult(await res.json());
       await load();
     } finally {
       setBusy(false);
@@ -493,6 +723,9 @@ export default function AgentView({ focusId, onFocusHandled }) {
   const dieFail = Math.round((selected?.hotspot_ratio || 0) * 612);
 
   const showList = listOpen || !selected;
+
+  // unified agent run (record + live re-run) — its control sits in the panel header
+  const agentRun = useAgentRun({ inspectionId: selected?.id, llmOn: settings.useLlm, trace });
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: 12, alignItems: "start" }}>
@@ -592,7 +825,7 @@ export default function AgentView({ focusId, onFocusHandled }) {
             <div style={{ fontSize: 14.5, fontWeight: 650, color: "var(--text)" }}>분석할 케이스를 선택하세요</div>
             <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.7 }}>
               왼쪽 리스크 큐에서 검사를 선택하면<br />
-              검사 개요와 AI 추천(추정 원인 · 권장 액션), 결함 Q&A가 표시됩니다.
+              에이전트 실행 기록, 추정 원인, 권장·선택 조치, 결함 Q&A가 한 화면에 표시됩니다.
             </div>
             {pending > 0 && (
               <span className="chip" style={{ color: "var(--med)", borderColor: "var(--med)", marginTop: 4 }}>
@@ -603,32 +836,50 @@ export default function AgentView({ focusId, onFocusHandled }) {
         </Panel>
       ) : (
       <div key={selected.id} className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-              {/* AI recommendation + chat */}
-              <Panel title="AI 추천 · 추정 원인 / 권장 액션" icon="shield" dense
-                right={<span className="chip" style={{ color: "var(--accent)", borderColor: "var(--accent-line)" }}>근거: RAG + 계측 룰</span>}>
+              {/* Unified Agent surface: run record → estimated causes (%) → response action → Q&A */}
+              <Panel title="검사 에이전트 · Inspection Agent" icon="bot" dense
+                right={
+                  <button className="btn btn-accent" onClick={agentRun.run}
+                    disabled={agentRun.running || !settings.useLlm || !selected.id}
+                    style={{ fontSize: 11, padding: "4px 10px" }}>
+                    {agentRun.running
+                      ? <Icon name="refresh" size={12} style={{ animation: "spin 1s linear infinite" }} />
+                      : <Icon name="play" size={12} />}
+                    {agentRun.runLabel}
+                  </button>
+                }>
+                {/* 1) 에이전트 실행 기록 */}
+                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}>
+                  <span className="label-cap">에이전트 실행 기록 · Agent Run</span>
+                  <span className="chip" style={{ fontSize: 9, color: mode.color, borderColor: mode.color }}>
+                    <Icon name="bot" size={10} /> {mode.label}
+                  </span>
+                </div>
+                <AgentRunBody state={agentRun} llmOn={settings.useLlm} traceLoading={traceLoading} />
+
+                <div className="divider" style={{ margin: "14px 0" }} />
+
+                {/* 2) 추정 원인 (%)  +  3) 조치 선택 */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1.1fr", gap: 14, alignItems: "start" }}>
                   <div>
                     <div className="label-cap" style={{ marginBottom: 6 }}>추정 원인 · Probable Causes</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                       {causes.map((c, i) => <CauseCard key={i} idx={i} cause={c} onEvidence={setEvidence} />)}
+                      {causes.length === 0 && <span style={{ fontSize: 11, color: "var(--text-3)" }}>추정 원인이 아직 없습니다.</span>}
                     </div>
                   </div>
                   <div>
-                    <div className="label-cap" style={{ marginBottom: 6 }}>권장 액션 · Next Actions</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                      {actions.map((a, i) => (
-                        <ActionRow key={i} idx={i} action={a} onExecute={executeAction} onEvidence={setEvidence} disabled={decided} busy={busy} />
-                      ))}
-                      {decided && (
-                        <span style={{ fontSize: 10.5, color: "var(--text-3)" }}>
-                          이미 조치가 기록된 검사입니다 ({selected.review_note || selected.engineer_decision}).
-                        </span>
-                      )}
-                    </div>
+                    <div className="label-cap" style={{ marginBottom: 6 }}>조치 선택 · Response Action</div>
+                    <ActionSelector key={selected.id} actions={actions} decided={decided} busy={busy}
+                      onExecute={executeAction} onEvidence={setEvidence}
+                      reviewResult={reviewResult}
+                      reviewNote={selected.review_note || DECISION_LABEL[selected.engineer_decision]?.label} />
                   </div>
                 </div>
 
-                <div className="divider" style={{ margin: "12px 0" }} />
+                <div className="divider" style={{ margin: "14px 0" }} />
+
+                {/* 4) 결함 Q&A */}
                 <DefectChat inspectionId={selected.id} llmOn={settings.useLlm} causes={causes} actions={actions} />
               </Panel>
       </div>

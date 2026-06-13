@@ -58,6 +58,10 @@ class InspectionChatRequest(BaseModel):
     extra_context: str = Field(default="", max_length=2000)
 
 
+class AgentStreamRequest(BaseModel):
+    use_llm: bool = True
+
+
 class ReviewRequest(BaseModel):
     decision: Literal["approved", "needs_review", "false_alarm"]
     reviewer: str = Field(default="engineer", min_length=1, max_length=64)

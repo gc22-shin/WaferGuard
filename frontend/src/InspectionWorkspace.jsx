@@ -12,19 +12,32 @@ const SUBS = [
 // and the per-wafer inspection agent that acts on them — side by side.
 export default function InspectionWorkspace({ focusId, onFocusHandled }) {
   const [sub, setSub] = useState("results");
+  // a deep-link target raised from inside the Results view (the High-risk banner)
+  const [localFocus, setLocalFocus] = useState(null);
 
   // toast "분석 보러 가기" deep-links to a specific inspection → jump to the agent
   useEffect(() => {
     if (focusId) setSub("agent");
   }, [focusId]);
 
+  // Results view → "검사 에이전트에서 확인" jumps to the agent on this inspection
+  function openAgent(inspectionId) {
+    setLocalFocus(inspectionId);
+    setSub("agent");
+  }
+
+  const effectiveFocus = focusId || localFocus;
+
   return (
     <div>
       <SubTabs tabs={SUBS} active={sub} onChange={setSub} />
       {sub === "results" ? (
-        <InspectionView />
+        <InspectionView onOpenAgent={openAgent} />
       ) : (
-        <AgentView focusId={focusId} onFocusHandled={onFocusHandled} />
+        <AgentView
+          focusId={effectiveFocus}
+          onFocusHandled={() => { setLocalFocus(null); onFocusHandled && onFocusHandled(); }}
+        />
       )}
     </div>
   );
