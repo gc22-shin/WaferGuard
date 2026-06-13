@@ -19,8 +19,11 @@ const SOURCE_META = {
   engineer_chat:      { label: "엔지니어 학습", learned: true },
   engineer_confirmed: { label: "엔지니어 확정", learned: true },
   case_library:       { label: "표준 사례",     learned: false },
-  rag_documents:      { label: "지식베이스",     learned: false },
+  tech_guide:         { label: "기술 가이드",    learned: false },
   sop:                { label: "SOP",          learned: false },
+  near_miss:          { label: "Near-miss",    learned: false },
+  eval_set:           { label: "평가셋",         learned: false },
+  rag_documents:      { label: "지식베이스",     learned: false },
 };
 
 function sourceMeta(src) {

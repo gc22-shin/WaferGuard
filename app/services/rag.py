@@ -409,10 +409,14 @@ def retrieve_cases(
 
 
 def ensure_rag_index(force: bool = False) -> dict:
-    """Seed rag_documents from the curated corpus if empty. Idempotent.
+    """Seed rag_documents from the curated corpus. Idempotent and incremental.
+
+    Embeds and upserts only corpus docs not already indexed, so newly added
+    documents (e.g. technical guides) are picked up on the next startup without
+    re-embedding the whole corpus. ``force=True`` re-embeds everything.
 
     No-op without an API key (zero-vector embeddings carry no signal). Intended
-    to run once in a background thread at startup so the vector path above has a
+    to run in a background thread at startup so the vector path above has a
     corpus to search instead of silently falling back.
     """
     try:
@@ -424,19 +428,24 @@ def ensure_rag_index(force: bool = False) -> dict:
         return {"seeded": 0, "reason": "no_api_key"}
 
     try:
-        existing = storage.count_rag_documents()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("count_rag_documents failed: %s", exc)
-        existing = 0
-    if existing > 0 and not force:
-        return {"seeded": 0, "reason": "already_indexed", "existing": existing}
-
-    try:
         corpus = json.loads(_CORPUS_PATH.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001
         logger.warning("rag corpus load failed: %s", exc)
         return {"seeded": 0, "reason": str(exc)}
 
+    if force:
+        pending = corpus
+    else:
+        try:
+            indexed_ids = storage.existing_rag_ids()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("existing_rag_ids failed: %s", exc)
+            indexed_ids = set()
+        pending = [d for d in corpus if d.get("id") not in indexed_ids]
+        if not pending:
+            return {"seeded": 0, "reason": "already_indexed", "existing": len(indexed_ids)}
+
+    corpus = pending
     written = 0
     batch_size = 16
     for i in range(0, len(corpus), batch_size):

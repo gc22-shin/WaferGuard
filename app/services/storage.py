@@ -853,6 +853,13 @@ def count_rag_documents() -> int:
         return conn.execute("SELECT COUNT(*) AS c FROM rag_documents").fetchone()["c"]
 
 
+def existing_rag_ids() -> set[str]:
+    """IDs already present in rag_documents (used for incremental seeding)."""
+    with connect() as conn:
+        rows = conn.execute("SELECT id FROM rag_documents").fetchall()
+    return {r["id"] for r in rows}
+
+
 def rag_type_counts() -> dict[str, int]:
     """Indexed RAG document counts grouped by defect_type (for the data view)."""
     with connect() as conn:

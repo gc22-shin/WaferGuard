@@ -96,7 +96,11 @@
     "metadata": {
       "source": "eval_set",
       "eval_id": "RAG-001",
-      "required_evidence": ["Edge-Ring SOP", "Equipment trend", "PM history"]
+      "required_evidence": [
+        "Edge-Ring SOP",
+        "Equipment trend",
+        "PM history"
+      ]
     }
   },
   {
@@ -106,7 +110,10 @@
     "metadata": {
       "source": "eval_set",
       "eval_id": "RAG-002",
-      "required_evidence": ["Scratch SOP", "Critical miss policy"]
+      "required_evidence": [
+        "Scratch SOP",
+        "Critical miss policy"
+      ]
     }
   },
   {
@@ -116,7 +123,10 @@
     "metadata": {
       "source": "eval_set",
       "eval_id": "RAG-003",
-      "required_evidence": ["Near-full SOP", "Recipe checklist"]
+      "required_evidence": [
+        "Near-full SOP",
+        "Recipe checklist"
+      ]
     }
   },
   {
@@ -126,7 +136,10 @@
     "metadata": {
       "source": "eval_set",
       "eval_id": "RAG-004",
-      "required_evidence": ["Evaluation policy", "Class imbalance note"]
+      "required_evidence": [
+        "Evaluation policy",
+        "Class imbalance note"
+      ]
     }
   },
   {
@@ -136,7 +149,10 @@
     "metadata": {
       "source": "eval_set",
       "eval_id": "RAG-005",
-      "required_evidence": ["Grad-CAM check", "Edge-Ring SOP"]
+      "required_evidence": [
+        "Grad-CAM check",
+        "Edge-Ring SOP"
+      ]
     }
   },
   {
@@ -146,7 +162,10 @@
     "metadata": {
       "source": "eval_set",
       "eval_id": "RAG-006",
-      "required_evidence": ["Drift policy", "Model promotion checklist"]
+      "required_evidence": [
+        "Drift policy",
+        "Model promotion checklist"
+      ]
     }
   },
   {
@@ -156,7 +175,10 @@
     "metadata": {
       "source": "eval_set",
       "eval_id": "RAG-007",
-      "required_evidence": ["Inspection note", "Metrology note"]
+      "required_evidence": [
+        "Inspection note",
+        "Metrology note"
+      ]
     }
   },
   {
@@ -166,7 +188,10 @@
     "metadata": {
       "source": "eval_set",
       "eval_id": "RAG-008",
-      "required_evidence": ["Source boundary", "Human review policy"]
+      "required_evidence": [
+        "Source boundary",
+        "Human review policy"
+      ]
     }
   },
   {
@@ -176,7 +201,10 @@
     "metadata": {
       "source": "eval_set",
       "eval_id": "RAG-009",
-      "required_evidence": ["Critical miss policy", "Threshold policy"]
+      "required_evidence": [
+        "Critical miss policy",
+        "Threshold policy"
+      ]
     }
   },
   {
@@ -186,7 +214,10 @@
     "metadata": {
       "source": "eval_set",
       "eval_id": "RAG-010",
-      "required_evidence": ["Handoff policy", "Human decision trace"]
+      "required_evidence": [
+        "Handoff policy",
+        "Human decision trace"
+      ]
     }
   },
   {
@@ -196,7 +227,10 @@
     "metadata": {
       "source": "eval_set",
       "eval_id": "RAG-011",
-      "required_evidence": ["Metrology note", "Action Card schema"]
+      "required_evidence": [
+        "Metrology note",
+        "Action Card schema"
+      ]
     }
   },
   {
@@ -206,7 +240,10 @@
     "metadata": {
       "source": "eval_set",
       "eval_id": "RAG-012",
-      "required_evidence": ["Source boundary", "Evaluation fixture note"]
+      "required_evidence": [
+        "Source boundary",
+        "Evaluation fixture note"
+      ]
     }
   },
   {
@@ -487,6 +524,138 @@
       "source": "near_miss",
       "near_miss_id": "NM-010",
       "outcome": "handoff_gap_closed"
+    }
+  },
+  {
+    "id": "guide_center_001",
+    "content": "Center Defect Technical Remediation Guide. Symptom: defect signal concentrated in the central die region of the wafer map, often with a roughly circular footprint. Primary root causes: (a) CMP center over-polish from retainer-ring zone-1 pressure imbalance, pad center wear, or slurry center-feed deviation; (b) lithography focus/leveling drift placing best-focus off the wafer center; (c) chuck center vacuum leak or backside-gas center imbalance causing local non-flatness. Diagnostic steps: 1) compare center thickness/CD profile against the line baseline; 2) pull CMP head zone-1 pressure trend, pad conditioning log, and slurry flow/pressure; 3) review scanner focus, leveling, and any recent recipe change; 4) check ESC center vacuum and backside-gas zone balance. Remediation: 1) recalibrate head zone pressure and inspect retainer-ring wear; 2) shorten pad conditioning interval if center polish rate is elevated; 3) re-center scanner focus offset and re-validate; 4) repair center vacuum line or rebalance backside gas, then re-measure flatness. Escalation: if center defects persist across multiple lots on the same tool, hold the chamber and request a CMP/scanner PM. Always confirm the Grad-CAM focus overlaps the central die region before acting; if it does not, treat the classification as low-confidence and route to engineer review.",
+    "defect_type": "center",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Center Defect — Technical Remediation Guide",
+      "action": "Verify CMP head zone pressure and litho focus/leveling before re-running the center die region.",
+      "category": "CMP / Lithography"
+    }
+  },
+  {
+    "id": "guide_donut_001",
+    "content": "Donut (Ring-Pattern) Defect Technical Remediation Guide. Symptom: annular (ring-shaped) defect band at a fixed radius, indicating radial process non-uniformity rather than a point source. Primary root causes: (a) chamber heater zone temperature deviation or thermocouple miscalibration; (b) partial showerhead clogging skewing gas distribution into a ring; (c) MFC gas-flow asymmetry or edge-purge imbalance; (d) susceptor rotation instability; (e) RF match drift producing ring-shaped plasma density. Diagnostic steps: 1) map deposition/etch rate vs. radius and locate the ring; 2) review heater zone temperature map and thermocouple calibration; 3) check showerhead differential pressure and last clean/PM date; 4) verify MFC calibration, gas-line balance, and edge-purge flow; 5) inspect susceptor rotation and RF reflected power. Remediation: 1) recalibrate heater zones; 2) clean or replace showerhead if differential pressure is abnormal; 3) recalibrate MFCs and rebalance edge purge; 4) stabilize susceptor rotation; 5) re-tune RF match. Re-run a uniformity wafer after each change. Escalation: a recurring fixed-radius ring across wafers points to a hardware (showerhead/heater) issue — schedule chamber PM rather than recipe tweaking.",
+    "defect_type": "donut",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Donut / Ring-Pattern Defect — Technical Remediation Guide",
+      "action": "Check deposition chamber temperature zones, showerhead condition, and gas-flow symmetry for radial non-uniformity.",
+      "category": "Deposition (CVD/PVD/ALD)"
+    }
+  },
+  {
+    "id": "guide_edge_loc_001",
+    "content": "Edge-Localized (Edge-Loc) Defect Technical Remediation Guide. Symptom: clustered defects in a localized edge region (not a full ring), frequently aligned with a mechanical contact point. Primary root causes: (a) robot end-effector pad wear or contact-position offset; (b) edge grip marks from excessive handling pressure; (c) aligner notch/flat offset concentrating contact on one edge zone; (d) load-port docking deviation; (e) cassette slot deformation; (f) bevel-etch deviation. Diagnostic steps: 1) overlay defect angular position against transfer-path contact points; 2) review end-effector pad wear and grip-pressure settings; 3) check aligner calibration and load-port docking precision; 4) inspect cassette slots and bevel-etch recipe/gas distribution. Remediation: 1) replace worn end-effector pads; 2) reduce grip pressure to spec; 3) recalibrate aligner offset to distribute contact; 4) re-dock load port; 5) swap deformed cassette; 6) adjust bevel-etch conditions. Escalation: if the defect angle is fixed and repeats per tool, hold the handler for robot teaching/PM. Confirm Grad-CAM evidence falls on the affected edge sector before acting.",
+    "defect_type": "edge_loc",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Edge-Localized Defect — Technical Remediation Guide",
+      "action": "Inspect wafer-handling contact points (end-effector, edge grip, load-port docking) and bevel/edge process conditions.",
+      "category": "Wafer Handling / Edge Process"
+    }
+  },
+  {
+    "id": "guide_edge_ring_001",
+    "content": "Edge-Ring Defect Technical Remediation Guide (critical class). Symptom: defect concentrated in a continuous ring at the extreme wafer edge; high yield-loss risk because it affects many edge die. Primary root causes: (a) Edge Bead Removal (EBR) nozzle pressure variation or clogging; (b) incorrect edge-exclusion width in the coater recipe; (c) spin-coater RPM deviation thickening the edge; (d) non-uniform edge rinse leaving residue; (e) bevel polish deviation; (f) chuck edge-zone temperature deviation shifting edge CD. Diagnostic steps: 1) compare edge thickness/CD profile against baseline; 2) inspect EBR nozzle condition and pressure trend; 3) verify edge-exclusion parameters and coater RPM stability; 4) check edge rinse alignment/flow and bevel polish pressure; 5) review chuck edge-zone temperature. Remediation: 1) service/clean EBR nozzle and restore pressure; 2) reset edge-exclusion width; 3) stabilize coater RPM and dispense timing; 4) correct edge rinse; 5) adjust bevel polish; 6) recalibrate chuck edge temperature. Operating rule: Edge-Ring is a critical class — never auto-pass or scrap on AI output alone. Move to the human-review queue, attach the edge profile trend and same-tool history, and confirm with Grad-CAM before disposition.",
+    "defect_type": "edge_ring",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Edge-Ring Defect — Technical Remediation Guide",
+      "action": "Review EBR nozzle/pressure, edge-exclusion recipe, coater RPM, and bevel polish; route to review queue, do not auto-pass.",
+      "category": "Coat / Develop / EBR"
+    }
+  },
+  {
+    "id": "guide_loc_001",
+    "content": "Localized Cluster (Loc) Defect Technical Remediation Guide. Symptom: a tight cluster of defects at an arbitrary location that repeats on a specific tool/chamber — a particle-source signature. Primary root causes: (a) chamber particle contamination; (b) dry-pump oil backstream; (c) gas-line filter contamination; (d) ESC surface damage; (e) lift-pin wear debris; (f) slit-valve seal wear; (g) transfer-chamber micro-leak; (h) electrostatic particle attraction. Diagnostic steps: 1) correlate defects with a single chamber via lot history and particle-counter trend; 2) check pump backstream and oil state; 3) inspect gas-line filter differential pressure; 4) examine ESC surface and backside particle map; 5) inspect lift pins, slit-valve seals, and chamber leak rate; 6) verify ionizer balance/grounding. Remediation: 1) chamber clean/season; 2) service pump and exhaust; 3) replace gas-line filter; 4) repair/replace ESC; 5) replace lift pins; 6) replace slit-valve seal; 7) repair leak; 8) rebalance ionizer. Escalation: hold the suspect chamber until the particle trend recovers; do not release wafers from a tool with a rising particle count.",
+    "defect_type": "loc",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Localized Cluster Defect — Technical Remediation Guide",
+      "action": "Isolate the offending chamber; check particle source (pump backstream, ESC, lift pins, slit-valve seals, gas-line filters).",
+      "category": "Process Chamber / Particle Control"
+    }
+  },
+  {
+    "id": "guide_random_001",
+    "content": "Random Particle Defect Technical Remediation Guide (critical class). Symptom: spatially scattered defects with no fixed pattern, frequently time-correlated rather than tool-specific — an environmental signature. Primary root causes: (a) HVAC filter change transient or FFU airflow drop; (b) cleanroom differential-pressure/door-interlock disturbance; (c) human-traffic particle bursts during shift change; (d) chemical hood exhaust instability; (e) DI water particle spike; (f) gas-cabinet purge bursts; (g) low-humidity electrostatic attraction. Diagnostic steps: 1) plot facility particle trend against the defect time window; 2) check FFU airflow and HVAC/filter change log; 3) review differential pressure, airflow, and access logs; 4) inspect hood exhaust and DI water resistivity/particle monitors; 5) check gas-cabinet purge sequence and humidity. Remediation: 1) stabilize HVAC/FFU after filter changes; 2) restore differential pressure; 3) enforce gowning/traffic control; 4) correct hood exhaust; 5) restore DI water quality; 6) tune gas-cabinet purge; 7) restore humidity. Operating rule: Random is a critical class for yield variability — when particle counts spike facility-wide, widen sampling and escalate to facilities; do not silently auto-pass scattered defects.",
+    "defect_type": "random",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Random Particle Defect — Technical Remediation Guide",
+      "action": "Treat as an environmental/facility event; check cleanroom HVAC, DI water, gas cabinets, and time-correlated activity.",
+      "category": "Cleanroom / Facility"
+    }
+  },
+  {
+    "id": "guide_scratch_001",
+    "content": "Scratch Defect Technical Remediation Guide (critical class). Symptom: long linear or arc-shaped defect, almost always mechanical contact rather than process — high risk of killing a row of die. Primary root causes: (a) scratch appearing after cassette unload from load-port/robot/cassette-slot contact; (b) robot-arm path interference; (c) chuck-surface foreign material scratching the backside; (d) handler belt/roller damage; (e) wafer slip during transfer; (f) end-effector pad wear; (g) alignment-stage interference; (h) boat-load interference. Diagnostic steps: 1) trace when the linear defect first appears in the flow; 2) review robot teaching coordinates and path clearance; 3) inspect chuck-surface cleanliness and backside defect map; 4) check handler belt/roller wear; 5) verify grip pressure, acceleration profile, and vacuum for slip. Remediation: 1) re-teach/correct robot path; 2) clean chuck surface; 3) replace damaged belt/rollers; 4) adjust grip and acceleration to stop slip; 5) replace worn end-effector pads; 6) correct stage/boat alignment. Operating rule: Scratch is a critical class. Hold the suspect transport module immediately, map the scratch direction to the contact source, and route to human review — a single uncaught scratch source can damage every subsequent wafer.",
+    "defect_type": "scratch",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Scratch Defect — Technical Remediation Guide",
+      "action": "Inspect mechanical contact along the transport path (robot teaching, chuck surface, handler belt, wafer slip).",
+      "category": "Transport / Mechanical Handling"
+    }
+  },
+  {
+    "id": "guide_near_full_001",
+    "content": "Near-Full Wafer Failure Technical Remediation Guide (critical class). Symptom: defects covering nearly the entire wafer — a gross process excursion, not a subtle pattern. Highest-severity, immediate-action class. Primary root causes: (a) recipe mismatch or wrong mask/job-deck; (b) chamber condition out of spec (post-PM not seasoned); (c) gas-supply interruption mid-process; (d) lithography dose/focus gross error; (e) developer concentration out of spec; (f) hotplate full-wafer temperature excursion; (g) precursor depletion / full deposition failure. Diagnostic steps: 1) immediately verify lot-start recipe, chamber recipe, mask ID/layer match, and any operator override; 2) check gas-supply pressure, interlocks, and alarm logs for the process window; 3) review scanner dose/focus and recipe validation; 4) check developer concentration/temperature; 5) review hotplate temperature map and precursor/bubbler levels. Remediation: 1) correct recipe/mask and re-run; 2) re-season chamber after PM; 3) restore gas supply; 4) correct dose/focus; 5) replace developer; 6) recalibrate hotplate; 7) refill precursor. Operating rule: Near-Full triggers a High-risk alert. Stop the lot, quarantine affected wafers, notify the shift lead, and do not release until root cause is confirmed.",
+    "defect_type": "near_full",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Near-Full Wafer Failure — Technical Remediation Guide",
+      "action": "Treat as a gross-process excursion: verify recipe/mask match, gas supply continuity, dose/develop, and chamber condition immediately.",
+      "category": "Gross Process Excursion"
+    }
+  },
+  {
+    "id": "guide_none_001",
+    "content": "Normal-Pattern Baseline and SPC Reference Guide. Purpose: a 'None' (normal) classification is not a no-op — normal wafers define the baseline against which drift and anomalies are judged. Practices: 1) archive the process conditions (tool, recipe, chamber) of confirmed-normal lots as a per-line baseline; 2) keep SPC control limits and trend charts current for key parameters (CD, overlay, thickness, particle); 3) register golden-sample images and metadata for visual reference; 4) record normal CD/overlay/thickness radial profiles as references for later comparison. Use: when a new pattern appears, compare it against the baseline distribution and golden samples to decide whether it is a true excursion or normal variation. Drift link: feed the normal baseline into drift monitoring so covariate shift can be detected early. Re-validate the baseline after major PM or recipe changes so the reference does not go stale.",
+    "defect_type": "none",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Normal-Pattern Baseline & SPC Reference Guide",
+      "action": "Archive normal-lot conditions as the drift-comparison baseline; keep SPC limits and golden samples current.",
+      "category": "Baseline / SPC"
+    }
+  },
+  {
+    "id": "guide_general_gradcam_001",
+    "content": "Grad-CAM Evidence Interpretation Guide. Purpose: Grad-CAM overlays show where the model focused; use them to validate, not just accept, a classification. Expected-vs-bad focus by class: Center → focus on the central die region; Edge-Ring → continuous focus along the wafer edge ring; Scratch → focus following the linear defect track; Loc → tight focus on the local cluster; Random → diffuse/scattered focus; Near-Full → broad activation across most of the wafer. Red flags: focus on the wafer background or notch; focus that does not overlap the visible defect; activation spread evenly with no relation to any feature. Action on mismatch: if the Grad-CAM focus does not match the predicted class location, treat the prediction as low-confidence regardless of the score. Do not auto-dispose; move the case to the human-in-the-loop review queue with the overlay attached. General rule: AI output is a first-pass screen. Engineers confirm root cause from Grad-CAM evidence plus process/metrology context before any disposition.",
+    "defect_type": "general",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Grad-CAM Evidence Interpretation Guide",
+      "action": "Confirm the Grad-CAM focus spatially matches the predicted defect class; mismatch means low-confidence — route to engineer review.",
+      "category": "Model Evidence / HITL"
+    }
+  },
+  {
+    "id": "guide_general_drift_001",
+    "content": "Model Drift Response Guide. Purpose: define the response when input or prediction drift approaches the configured threshold (e.g., PSI nearing the drift limit). Signals: rising population stability index on key features, a new device/product distribution entering the line, input-normalization changes, or a falling confirmed-accuracy trend. Response ladder: 1) at threshold approach, increase sampling and route more cases to human review; 2) investigate the drift source — covariate shift, new device mix, sensor/normalization change — before assuming model decay; 3) if drift is real and persistent, trigger a retraining candidate and validate it in staging; 4) compare candidate vs. production on critical-class recall and false-alarm rate, not overall accuracy alone; 5) promote only after the candidate beats production on the operational metrics; keep a rollback path. Guardrail: never promote a retrain candidate on a single aggregate metric; the operational risk is critical-class miss rate, so gate promotion on that.",
+    "defect_type": "general",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Model Drift Response Guide",
+      "action": "On drift-threshold approach, raise sampling/HITL, investigate covariate shift, and stage a retrain candidate before promoting.",
+      "category": "MLOps / Drift"
+    }
+  },
+  {
+    "id": "guide_general_hitl_001",
+    "content": "Human-in-the-Loop (HITL) Escalation Guide. Purpose: define when a case must leave the automated path and go to an engineer. Escalate when: confidence is below the low-confidence threshold (e.g., < 0.70); the pattern is novel or unseen; the predicted class is a critical class (Edge-Ring, Random, Scratch, Near-Full); Grad-CAM evidence does not match the prediction; or metrology rules are breached alongside the defect call. What to attach for review: the wafer map and Grad-CAM overlay, the top similar past cases and technical guide, the process/metrology context, and same-tool recent history. Disposition: the engineer confirms or overrides; record the decision so it becomes episodic memory the agent learns from. Core principle: AI judgment is a first-pass screen and a High-risk call always requires human confirmation before action — accuracy is secondary to not missing a critical defect.",
+    "defect_type": "general",
+    "metadata": {
+      "source": "tech_guide",
+      "title": "Human-in-the-Loop Escalation Guide",
+      "action": "Route low-confidence, novel-pattern, or critical-class cases to engineer review; never auto-dispose on AI output alone.",
+      "category": "Operations / HITL"
     }
   }
 ]
