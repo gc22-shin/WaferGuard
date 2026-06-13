@@ -92,6 +92,29 @@ def main() -> None:
     drift = client.post("/api/v1/mlops/drift", json={"intensity": "strong", "line_id": "LINE-7"})
     assert drift.status_code == 200, drift.text
 
+    # approve/reject with an engineer comment → fed back as agent context
+    from app.services import storage as _storage  # noqa: PLC0415
+
+    apr_id = _storage.insert_pending_approval(
+        "MLOPS-ALL", "recommend_retrain", {"trigger_type": "manual"}, "smoke: drift 0.42 권고"
+    )
+    rejected = client.post(
+        f"/api/v1/approvals/{apr_id}/reject",
+        json={"comment": "스모크: 신규 디바이스 편입이라 재학습 보류"},
+    )
+    assert rejected.status_code == 200, rejected.text
+    assert rejected.json()["comment"] == "스모크: 신규 디바이스 편입이라 재학습 보류"
+    feedback = _storage.recent_human_feedback(None, None, limit=5)
+    assert any(f.get("comment") for f in feedback), "approval comment should surface in human feedback"
+
+    # MLOps agent chat endpoint streams SSE (stub path, no LLM required)
+    mlops_chat = client.post(
+        "/api/v1/mlops/agent/chat/stream",
+        json={"message": "지금 재학습 필요해?", "use_llm": False},
+    )
+    assert mlops_chat.status_code == 200, mlops_chat.text
+    assert '"type"' in mlops_chat.text and '"done"' in mlops_chat.text
+
     demo = client.post(
         "/api/v1/demo/seed",
         json={"line_id": "LINE-SMOKE", "reviewer": "smoke-test", "include_reviews": True},

@@ -365,6 +365,11 @@ def _human_feedback_block(equipment_id: str | None, defect_type: str | None) -> 
         reason = (it.get("reason") or "").strip()
         reason_txt = f" (사유: {reason[:80]})" if reason else ""
         out.append(f"  - {target}{decision}{reason_txt}")
+        # the engineer's own comment at approve/reject time — the strongest signal,
+        # so render it on its own line verbatim (truncated) when present.
+        comment = (it.get("comment") or "").strip()
+        if comment:
+            out.append(f"    ↳ 담당자 코멘트: \"{comment[:160]}\"")
     return "\n".join(out)
 
 

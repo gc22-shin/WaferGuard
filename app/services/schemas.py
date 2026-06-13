@@ -85,6 +85,20 @@ class MlopsAgentRequest(BaseModel):
     autonomy: Literal["auto", "approval", "notify"] = "approval"
 
 
+class ApprovalResolveRequest(BaseModel):
+    # optional engineer comment captured at approve/reject time; fed back to the
+    # agent as context so it learns from the human's reasoning.
+    comment: str = Field(default="", max_length=500)
+
+
+class MlopsChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    history: list[dict[str, str]] = Field(default_factory=list, max_length=20)
+    use_llm: bool = True
+    # the on-screen monitoring log the engineer is looking at (optional)
+    extra_context: str = Field(default="", max_length=4000)
+
+
 class PromoteRequest(BaseModel):
     version: str | None = None
 

@@ -145,6 +145,9 @@ def init_db() -> None:
         _ensure_column(conn, "inspections", "process_context_json", "TEXT")
         _ensure_column(conn, "inspections", "metrology_json", "TEXT")
         _ensure_column(conn, "inspections", "action_card_json", "TEXT")
+        # human comment captured when an approval is approved/rejected — fed back
+        # to the agent as context so it learns from the engineer's reasoning.
+        _ensure_column(conn, "pending_approvals", "comment", "TEXT")
         conn.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_handoff_reports_schedule_key
@@ -829,13 +832,14 @@ def pending_approval_for_tool(tool_name: str) -> dict | None:
     return None
 
 
-def resolve_approval(approval_id: str, status: str) -> dict | None:
-    """Set status to 'approved' or 'rejected'."""
+def resolve_approval(approval_id: str, status: str, comment: str | None = None) -> dict | None:
+    """Set status to 'approved' or 'rejected', optionally storing a human comment."""
     now = utc_now()
+    comment = (comment or "").strip() or None
     with connect() as conn:
         conn.execute(
-            "UPDATE pending_approvals SET status = ?, resolved_at = ? WHERE id = ?",
-            (status, now, approval_id),
+            "UPDATE pending_approvals SET status = ?, resolved_at = ?, comment = ? WHERE id = ?",
+            (status, now, comment, approval_id),
         )
         row = conn.execute(
             "SELECT * FROM pending_approvals WHERE id = ?", (approval_id,)
@@ -888,7 +892,7 @@ def recent_human_feedback(
         # 1) Resolved approvals (the agent's own recommendations that a human ruled on)
         rows = conn.execute(
             """
-            SELECT a.tool_name, a.reason, a.status, a.resolved_at,
+            SELECT a.tool_name, a.reason, a.comment, a.status, a.resolved_at,
                    a.inspection_id, i.equipment_id, i.defect_type
             FROM pending_approvals a
             LEFT JOIN inspections i ON i.id = a.inspection_id
@@ -912,6 +916,7 @@ def recent_human_feedback(
                     "decision": d["status"],
                     "tool_name": d["tool_name"],
                     "reason": d.get("reason"),
+                    "comment": d.get("comment"),
                     "equipment_id": d.get("equipment_id"),
                     "defect_type": d.get("defect_type"),
                     "inspection_id": d.get("inspection_id"),

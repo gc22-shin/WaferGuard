@@ -14,6 +14,9 @@ const MlopsAgentContext = createContext(null);
 export function MlopsAgentProvider({ children }) {
   const { settings } = useStream();
   const [logs, setLogs] = useState([]);
+  // single chat thread with the MLOps agent — lives here (above the tab boundary)
+  // so the conversation survives navigating away and back, like the monitoring log
+  const [chat, setChat] = useState([]);
   const [autonomy, setAutonomy] = useState("approval");
   const [autoMonitor, setAutoMonitor] = useState(false);
   const [running, setRunning] = useState(false);
@@ -98,6 +101,7 @@ export function MlopsAgentProvider({ children }) {
 
   const value = {
     logs, setLogs,
+    chat, setChat,
     autonomy, setAutonomy,
     autoMonitor, setAutoMonitor,
     running, setRunning,

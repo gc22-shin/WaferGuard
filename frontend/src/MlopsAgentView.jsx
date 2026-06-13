@@ -126,6 +126,185 @@ function LogEntry({ entry }) {
   );
 }
 
+// summarize the on-screen monitoring log so the chat is grounded in exactly what
+// the engineer is looking at (the backend also injects the persisted log)
+function buildLogContext(logs) {
+  if (!logs?.length) return "";
+  const lines = ["화면의 모니터링 로그 (최신순):"];
+  logs.slice(0, 10).forEach(e => {
+    const recommended = (e.steps || []).some(s => s.name === "recommend_retrain");
+    const outcome = recommended
+      ? (e.autonomy === "auto" ? "재학습 자동 실행" : "재학습 권고/승인 대기")
+      : "현 상태 유지";
+    const tools = (e.steps || []).map(s => s.name).join(", ") || "없음";
+    const final = (e.finalText || "").trim().replace(/\s+/g, " ").slice(0, 200);
+    lines.push(`- ${e.ts} · 자율=${e.autonomy} · ${outcome} · 툴=[${tools}]${final ? ` · 판단: ${final}` : ""}`);
+  });
+  return lines.join("\n");
+}
+
+const CHAT_SUGGESTIONS = ["지금 재학습이 필요해?", "왜 그렇게 판단했어?", "최근 드리프트 추세 어때?"];
+
+function MlopsAgentChat() {
+  const { settings } = useStream();
+  const llmOn = settings.useLlm;
+  const { chat, setChat, logs } = useMlopsAgent();
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef(null);
+
+  useEffect(() => {
+    if (chat.length > 0 && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [chat, sending]);
+
+  const patchLast = (fn) => setChat(m => {
+    if (!m.length) return m;
+    const copy = m.slice();
+    copy[copy.length - 1] = fn(copy[copy.length - 1]);
+    return copy;
+  });
+
+  function applyEvent(ev) {
+    if (ev.type === "tool_call") {
+      patchLast(a => ({ ...a, tools: [...(a.tools || []), { name: ev.name, args: ev.args, status: "running" }] }));
+    } else if (ev.type === "tool_result") {
+      patchLast(a => {
+        const tools = (a.tools || []).slice();
+        for (let i = tools.length - 1; i >= 0; i--) {
+          if (tools[i].status === "running") { tools[i] = { ...tools[i], status: "done", summary: ev.summary, result: ev.result }; break; }
+        }
+        return { ...a, tools };
+      });
+    } else if (ev.type === "token") {
+      patchLast(a => ({ ...a, content: (a.content || "") + ev.text }));
+    } else if (ev.type === "done") {
+      patchLast(a => ({ ...a, content: ev.reply || a.content || "응답 없음", streaming: false }));
+    }
+  }
+
+  async function send(text) {
+    const q = (text ?? input).trim();
+    if (!q || sending || !llmOn) return;
+    const history = chat.map(m => ({ role: m.role, content: m.content }));
+    setChat(m => [...m,
+      { role: "user", content: q },
+      { role: "assistant", content: "", tools: [], streaming: true },
+    ]);
+    setInput("");
+    setSending(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/mlops/agent/chat/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: q, history, use_llm: llmOn, extra_context: buildLogContext(logs) }),
+      });
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const blocks = buf.split("\n\n");
+        buf = blocks.pop() || "";
+        for (const block of blocks) {
+          const line = block.split("\n").find(l => l.startsWith("data:"));
+          if (!line) continue;
+          try { applyEvent(JSON.parse(line.slice(5).trim())); } catch { /* skip partial */ }
+        }
+      }
+    } catch (e) {
+      patchLast(a => ({ ...a, content: `오류: 응답을 받지 못했습니다 (${e.message})`, streaming: false }));
+    } finally {
+      patchLast(a => ({ ...a, streaming: false }));
+      setSending(false);
+    }
+  }
+
+  return (
+    <Panel title="MLOps 에이전트와 대화 · 모니터링 로그 기반" icon="bot" dense pad={0}
+      right={chat.length > 0 && (
+        <button className="btn btn-ghost" onClick={() => setChat([])} disabled={sending}
+          style={{ padding: "4px 8px", fontSize: 10.5, color: "var(--text-3)" }}>
+          <Icon name="x" size={11} />대화 비우기
+        </button>
+      )}>
+      <div ref={scrollRef} style={{ maxHeight: 460, minHeight: 200, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 9 }}>
+        {chat.length === 0 && (
+          <div className="panel-inset" style={{ padding: "11px 13px", fontSize: 11.5, color: "var(--text-2)", lineHeight: 1.6 }}>
+            지금까지의 모니터링 로그({logs.length}건)와 현재 모델·드리프트 상태를 근거로 답합니다.
+            재학습 필요 여부, 판단 이유, 추세를 물어보세요.
+          </div>
+        )}
+        {chat.length === 0 && llmOn && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "2px 1px" }}>
+            {CHAT_SUGGESTIONS.map(s => (
+              <button key={s} onClick={() => send(s)} disabled={sending} className="focusable"
+                style={{
+                  fontSize: 10.5, padding: "4px 9px", borderRadius: 99, cursor: "pointer", font: "inherit",
+                  border: "1px solid var(--border-soft)", background: "var(--panel)", color: "var(--text-2)",
+                }}>
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+        {chat.length === 0 && !llmOn && (
+          <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.6, padding: "2px 1px" }}>
+            설정 탭의 'Agent LLM 분석'을 켜면 모니터링 로그에 대해 질문할 수 있습니다.
+          </div>
+        )}
+
+        {chat.map((m, i) => {
+          const isUser = m.role === "user";
+          const hasTools = !isUser && m.tools && m.tools.length > 0;
+          const showCursor = !isUser && m.streaming && (m.content || "").length > 0;
+          const thinking = !isUser && m.streaming && !hasTools && !(m.content || "").length;
+          return (
+            <div key={i} style={{
+              alignSelf: isUser ? "flex-end" : "flex-start",
+              maxWidth: "82%",
+              background: isUser ? "var(--accent-dim)" : "var(--panel-2)",
+              border: `1px solid ${isUser ? "var(--accent-line)" : "var(--border-soft)"}`,
+              borderRadius: 10, padding: "8px 11px",
+              fontSize: 12, lineHeight: 1.6, color: "var(--text)",
+              whiteSpace: isUser ? "pre-wrap" : "normal",
+            }}>
+              {hasTools && <ToolCalls calls={m.tools} />}
+              {thinking ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--text-3)" }}>
+                  <Icon name="refresh" size={12} style={{ animation: "spin 1s linear infinite" }} />분석 중…
+                </span>
+              ) : isUser ? (
+                m.content
+              ) : (
+                <>{m.content && <Markdown text={m.content} />}{showCursor && <span className="blink-cursor">▍</span>}</>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display: "flex", gap: 8, padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing) send(); }}
+          placeholder={llmOn ? "모니터링 로그·모델 상태에 대해 질문하세요…" : "LLM이 꺼져 있어 채팅 불가"}
+          disabled={!llmOn}
+          style={{
+            flex: 1, background: "var(--panel-2)", border: "1px solid var(--border-strong)",
+            borderRadius: 7, padding: "8px 11px", color: "var(--text)", font: "inherit", fontSize: 12,
+            opacity: llmOn ? 1 : .55,
+          }} />
+        <button className="btn btn-accent" onClick={() => send()} disabled={sending || !input.trim() || !llmOn}>
+          <Icon name="send" size={13} />전송
+        </button>
+      </div>
+    </Panel>
+  );
+}
+
 export default function MlopsAgentView() {
   const { settings, tick } = useStream();
   // state + run loop + auto-monitor timer live in a root-level context, so the log
@@ -179,6 +358,7 @@ export default function MlopsAgentView() {
   const activeMode = AUTONOMY.find(a => a.id === autonomy);
 
   return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
     <Panel title="MLOps 에이전트 · 모니터링 로그" icon="bot" dense
       right={
         <button className="btn btn-accent" onClick={run} disabled={running || !settings.useLlm}
@@ -244,5 +424,8 @@ export default function MlopsAgentView() {
         )}
       </div>
     </Panel>
+
+    <MlopsAgentChat />
+    </div>
   );
 }

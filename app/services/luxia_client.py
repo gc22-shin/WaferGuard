@@ -23,6 +23,9 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import random
+import threading
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -37,6 +40,80 @@ _CHAT_PATH = "/llm/openai/chat/completions/gpt-4o-mini/create"
 _EMBED_PATH = "/luxia/v1/embedding"
 _RERANK_PATH = "/luxia/v1/rerank"
 _TIMEOUT = 30  # seconds
+
+# ---------------------------------------------------------------------------
+# Rate-limit handling: retry + self-throttle (shared by all gateway calls)
+# ---------------------------------------------------------------------------
+# The gateway is rate-limited (free tier), and a single agent turn fires 4-5
+# tool-loop calls; background inspection agents + 90s auto-monitoring + chat can
+# overlap and burst past the limit -> 429. Without retry, one transient 429 drops
+# straight to a stub answer. So: retry retryable statuses with exponential backoff
+# (honoring Retry-After), and self-throttle below the limit with a min spacing
+# between requests and a small concurrency cap. All env-tunable.
+_RETRY_STATUSES = {429, 500, 502, 503, 504}
+_MAX_RETRIES = int(os.environ.get("LUXIA_MAX_RETRIES", "4"))
+_MIN_INTERVAL = float(os.environ.get("LUXIA_MIN_INTERVAL", "0.6"))  # seconds between request starts
+_MAX_CONCURRENCY = max(1, int(os.environ.get("LUXIA_MAX_CONCURRENCY", "2")))
+_MAX_BACKOFF = float(os.environ.get("LUXIA_MAX_BACKOFF", "12"))
+
+_throttle_lock = threading.Lock()
+_last_request_ts = 0.0
+_concurrency = threading.Semaphore(_MAX_CONCURRENCY)
+
+
+def _throttle() -> None:
+    """Space out request starts so concurrent callers don't burst past the limit."""
+    global _last_request_ts  # noqa: PLW0603
+    with _throttle_lock:
+        wait = _MIN_INTERVAL - (time.monotonic() - _last_request_ts)
+        if wait > 0:
+            time.sleep(wait)
+        _last_request_ts = time.monotonic()
+
+
+def _retry_delay(resp: requests.Response | None, attempt: int) -> float:
+    """Honor Retry-After when present, else exponential backoff with jitter."""
+    if resp is not None:
+        ra = resp.headers.get("Retry-After")
+        if ra:
+            try:
+                return min(float(ra), _MAX_BACKOFF)
+            except ValueError:
+                pass
+    return min(_MAX_BACKOFF, (2 ** attempt) * 0.5) + random.uniform(0, 0.4)
+
+
+def _post_json(path: str, payload: dict, timeout: int = _TIMEOUT) -> dict:
+    """POST with self-throttle, concurrency cap, and retry on rate-limit/5xx.
+
+    Raises on final failure; callers translate that into their graceful fallback.
+    """
+    last_error: Exception = RuntimeError("request not attempted")
+    for attempt in range(_MAX_RETRIES + 1):
+        _throttle()
+        try:
+            with _concurrency:
+                resp = requests.post(BASE_URL + path, headers=_headers(), json=payload, timeout=timeout)
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt < _MAX_RETRIES:
+                time.sleep(_retry_delay(None, attempt))
+                continue
+            raise
+
+        if resp.status_code in _RETRY_STATUSES and attempt < _MAX_RETRIES:
+            delay = _retry_delay(resp, attempt)
+            logger.warning(
+                "Luxia %s -> HTTP %s; retrying in %.1fs (attempt %d/%d)",
+                path, resp.status_code, delay, attempt + 1, _MAX_RETRIES,
+            )
+            time.sleep(delay)
+            continue
+
+        resp.raise_for_status()  # raises on a final non-retryable / exhausted status
+        return resp.json()
+
+    raise last_error
 
 
 def _api_key() -> str | None:
@@ -140,26 +217,33 @@ def chat_with_tools(
         payload["tool_choice"] = "auto"
 
     try:
-        resp = requests.post(
-            BASE_URL + _CHAT_PATH,
-            headers=_headers(),
-            json=payload,
-            timeout=_TIMEOUT,
-        )
-        resp.raise_for_status()
-        return resp.json()
+        return _post_json(_CHAT_PATH, payload)
     except Exception as exc:  # noqa: BLE001
-        logger.error("Luxia chat_with_tools failed: %s", exc)
+        logger.error("Luxia chat_with_tools failed after retries: %s", exc)
         return _stub_chat_response(error=str(exc))
 
 
 def _stub_chat_response(error: str | None = None) -> dict:
-    content = (
-        "LUXIA_API_KEY 미설정 — Agent 스텁 응답입니다. "
-        "환경 변수를 설정하면 실제 GPT-4o-mini 판단이 활성화됩니다."
-    )
     if error:
-        content = f"[LLM 오류: {error}] {content}"
+        # The key is set but the call failed (after retries) — almost always a
+        # transient rate limit (HTTP 429). Don't claim the key is missing.
+        is_rate_limit = "429" in error or "Too Many Requests" in error
+        if is_rate_limit:
+            content = (
+                "[LLM 일시 혼잡: 요청이 많아 잠시 제한됨(429)] "
+                "자동 재시도 후에도 실패했습니다. 잠깐 기다렸다가 다시 시도하거나, "
+                "자동 모니터링을 끄고 동시 요청을 줄여보세요."
+            )
+        else:
+            content = (
+                f"[LLM 호출 실패: {error}] 잠시 후 다시 시도해주세요. "
+                "반복되면 네트워크와 LUXIA_API_KEY 설정을 확인하세요."
+            )
+    else:
+        content = (
+            "LUXIA_API_KEY 미설정 — Agent 스텁 응답입니다. "
+            "환경 변수를 설정하면 실제 GPT-4o-mini 판단이 활성화됩니다."
+        )
     return {
         "id": "stub-0",
         "object": "chat.completion",
@@ -196,19 +280,12 @@ def embed(texts: list[str]) -> list[list[float]]:
         return [[0.0] * 1024 for _ in texts]
 
     try:
-        resp = requests.post(
-            BASE_URL + _EMBED_PATH,
-            headers=_headers(),
-            json={"inputs": texts},
-            timeout=_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        data = _post_json(_EMBED_PATH, {"inputs": texts})
         # Response shape: {"data": [{"embedding": [...]}]}
         embeddings = [item["embedding"] for item in data["data"]]
         return embeddings
     except Exception as exc:  # noqa: BLE001
-        logger.error("Luxia embed failed: %s", exc)
+        logger.error("Luxia embed failed after retries: %s", exc)
         return [[0.0] * 1024 for _ in texts]
 
 
@@ -237,19 +314,12 @@ def rerank(query: str, documents: list[str], top_k: int = 3) -> list[dict]:
         ]
 
     try:
-        resp = requests.post(
-            BASE_URL + _RERANK_PATH,
-            headers=_headers(),
-            json={
-                "model": "luxia-rerank-2501",
-                "query": query,
-                "documents": documents,
-                "top_k": top_k,
-            },
-            timeout=_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        data = _post_json(_RERANK_PATH, {
+            "model": "luxia-rerank-2501",
+            "query": query,
+            "documents": documents,
+            "top_k": top_k,
+        })
         # Expected: {"results": [{"index": int, "relevance_score": float}]}, but the
         # gateway sometimes uses alternate key names — tolerate them rather than failing.
         results = data.get("results") or data.get("data") or []

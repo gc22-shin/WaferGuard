@@ -23,6 +23,7 @@ from app.services.rag_eval import rag_evaluation_set
 from app.services.defect_chat import chat_about_inspection, stream_chat_about_inspection
 from app.services.schemas import (
     AgentStreamRequest,
+    ApprovalResolveRequest,
     AutomationTickRequest,
     DemoSeedRequest,
     DriftRequest,
@@ -30,6 +31,7 @@ from app.services.schemas import (
     InspectRequest,
     InspectionChatRequest,
     MlopsAgentRequest,
+    MlopsChatRequest,
     PromoteRequest,
     RetrainRequest,
     ReviewRequest,
@@ -369,6 +371,30 @@ def mlops_agent_run_stream(request: MlopsAgentRequest) -> StreamingResponse:
     )
 
 
+@app.post("/api/v1/mlops/agent/chat/stream")
+def mlops_agent_chat_stream(request: MlopsChatRequest) -> StreamingResponse:
+    """Streaming chat with the MLOps agent, grounded in the monitoring log so far —
+    emits tool_call / tool_result / token / done as Server-Sent Events."""
+    from app.services.mlops_chat import stream_mlops_chat  # noqa: PLC0415
+
+    def event_source():
+        try:
+            for event in stream_mlops_chat(
+                request.message, request.history,
+                use_llm=request.use_llm, extra_context=request.extra_context,
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            err = {"type": "done", "reply": f"오류: 응답 생성 실패 ({exc})", "agent_mode": "error", "tool_calls": []}
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.post("/api/v1/mlops/drift")
 def drift(request: DriftRequest) -> dict[str, object]:
     return simulate_drift(request)
@@ -401,9 +427,13 @@ def pending_approvals(status: str = "pending") -> list[dict[str, object]]:
 
 
 @app.post("/api/v1/approvals/{approval_id}/approve")
-def approve_action(approval_id: str) -> dict[str, object]:
-    """Approve a pending High-risk Tool request and execute the underlying action."""
-    row = resolve_approval(approval_id, "approved")
+def approve_action(approval_id: str, request: ApprovalResolveRequest | None = None) -> dict[str, object]:
+    """Approve a pending High-risk Tool request and execute the underlying action.
+
+    An optional engineer comment is stored on the approval and later fed back to
+    the agent as human-feedback context."""
+    comment = request.comment if request else ""
+    row = resolve_approval(approval_id, "approved", comment=comment)
     if row is None:
         raise HTTPException(status_code=404, detail="Approval not found")
 
@@ -431,9 +461,10 @@ def approve_action(approval_id: str) -> dict[str, object]:
 
 
 @app.post("/api/v1/approvals/{approval_id}/reject")
-def reject_action(approval_id: str) -> dict[str, object]:
-    """Reject a pending High-risk Tool request."""
-    row = resolve_approval(approval_id, "rejected")
+def reject_action(approval_id: str, request: ApprovalResolveRequest | None = None) -> dict[str, object]:
+    """Reject a pending High-risk Tool request, storing an optional engineer comment."""
+    comment = request.comment if request else ""
+    row = resolve_approval(approval_id, "rejected", comment=comment)
     if row is None:
         raise HTTPException(status_code=404, detail="Approval not found")
     return row

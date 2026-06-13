@@ -141,6 +141,7 @@ export default function MlopsView() {
   const { tick } = useStream();
   const [state, setState] = useState(null);
   const [approvals, setApprovals] = useState([]);
+  const [comments, setComments] = useState({});   // approval id → engineer comment
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(null);
   const [driftOpen, setDriftOpen] = useState(false);
@@ -186,7 +187,13 @@ export default function MlopsView() {
     if (busy) return;
     setBusy(true);
     try {
-      await fetch(`${API_BASE}/api/v1/approvals/${id}/${decision}`, { method: "POST" });
+      const comment = (comments[id] || "").trim();
+      await fetch(`${API_BASE}/api/v1/approvals/${id}/${decision}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ comment }),
+      });
+      setComments(c => { const n = { ...c }; delete n[id]; return n; });
       flash(decision === "approve" ? "재학습 승인 — 실행됨" : "권고 거절됨");
       await load();
     } finally { setBusy(false); }
@@ -300,6 +307,16 @@ export default function MlopsView() {
                     <span className="mono" style={{ fontSize: 9.5, color: "var(--text-3)", marginLeft: "auto" }}>{ts(a.created_at)}</span>
                   </div>
                   <div style={{ fontSize: 11.5, color: "var(--text-2)", lineHeight: 1.5 }}>{a.reason}</div>
+                  <textarea
+                    value={comments[a.id] || ""}
+                    onChange={e => setComments(c => ({ ...c, [a.id]: e.target.value }))}
+                    placeholder="코멘트 (선택) — 결정 사유를 남기면 에이전트가 다음 판단에 반영합니다."
+                    rows={2}
+                    style={{
+                      width: "100%", boxSizing: "border-box", resize: "vertical", font: "inherit", fontSize: 11,
+                      padding: "6px 8px", borderRadius: 7, lineHeight: 1.45,
+                      border: "1px solid var(--border-soft)", background: "var(--panel-2)", color: "var(--text)",
+                    }} />
                   <div style={{ display: "flex", gap: 6 }}>
                     <button className="btn btn-accent" disabled={busy} onClick={() => resolveApproval(a.id, "approve")}
                       style={{ padding: "4px 10px", fontSize: 11 }}><Icon name="check" size={11} />승인 · 실행</button>
