@@ -42,6 +42,50 @@ scripts/
 outputs/               # 런타임 산출물 (이미지/DB). gitignore, 기동 시 자동 생성
 ```
 
+## 에이전틱 플로우
+
+WaferGuard의 핵심은 `app/services/agent.py`에 구현된 **LangGraph 기반 Agent**다. 검사 evidence(risk score, metrology rule hit, RAG 사례, 웨이퍼 이미지)를 받아 LLM이 스스로 도구를 호출하며 운영 판단을 내린다.
+
+### 실행 루프 (StateGraph)
+
+```
+START → decide → (tool_call?) → tool_exec → decide → ... → final_action → END
+```
+
+- **decide**: LUXIA Cloud LLM에 evidence 텍스트 + 웨이퍼 이미지 URL을 넘겨, 다음에 호출할 도구를 고르거나 최종 판단을 생성한다.
+- **tool_exec**: 모델이 고른 도구를 `TOOL_REGISTRY`에서 디스패치해 실행하고, 결과를 다시 decide로 돌려준다.
+- **final_action**: 마지막 판단 텍스트를 확정하고, 전체 trace(호출한 도구·인자·결과)를 `agent_traces` 테이블에 저장한다.
+- 최대 5회 반복(`max_iterations=5`)으로 무한 루프를 막는다. langgraph 미설치 시 동일 로직의 순차 실행으로 폴백한다.
+- `LUXIA_API_KEY`가 있으면 `llm` 모드, 없으면 규칙 기반 `stub` 모드로 동작한다.
+
+### 멀티에이전트 위임
+
+Agent는 두 종류로 구성되며, 개별 웨이퍼 차원을 넘어서는 문제는 상위 에이전트로 위임된다.
+
+- **Inspection Agent** — 개별 검사 건의 상황 판단·근거 조회·대응 action을 담당.
+- **MLOps Agent** — 라인 전체의 모델 성능(F1)·drift·계측 추세를 모니터링하고 재학습 필요 여부를 판단.
+
+Inspection Agent가 같은 설비 반복성 결함이나 지속 drift 근거를 모으면 `escalate_to_mlops`로 MLOps Agent에 위임하고, MLOps Agent의 결론(`mlops_decision`)을 최종 판단에 인용한다. MLOps Agent의 재학습 권고는 자율 모드에 따라 처리 방식이 달라진다 — `auto`(즉시 실행) / `approval`(사람 승인 대기) / `notify`(알림만).
+
+### 사용 가능한 도구
+
+`app/services/tools.py`에 정의된 10개 도구를 LLM이 function-calling으로 호출한다.
+
+| 도구 | 역할 |
+|------|------|
+| `search_similar_cases` | query를 임베딩해 RAG 지식베이스에서 유사 결함 사례를 검색·rerank (Top-k) |
+| `inspect_image` | wafer map / Grad-CAM overlay / ROI crop 이미지를 멀티모달 LLM으로 관찰 분석 |
+| `compare_with_past_wafer` | 현재 웨이퍼와 과거 사례 이미지를 멀티모달로 직접 비교 |
+| `get_equipment_history` | 같은 설비의 최근 검사 이력·동일 결함 반복 여부 조회 (반복성 판단) |
+| `get_metrology_trend` | 설비 계측값(CD/Overlay/두께/거칠기 등) 시계열 추세 조회 (단발 vs drift 구분) |
+| `get_mlops_state` | 현재 운영 모델 성능, 최신 drift 이벤트, 최근 재학습 이력 조회 |
+| `enqueue_for_review` | 판단이 불확실하거나 신뢰도가 낮은 건을 엔지니어 검토 큐에 등록 |
+| `recommend_retrain` | drift·반복 오판 근거를 바탕으로 모델 재학습 권고 (자율 모드에 따라 처리) |
+| `escalate_to_mlops` | fleet-level 문제를 MLOps Agent에 위임 |
+| `save_case_to_knowledge` | 검증된 대응 사례를 임베딩해 RAG 지식베이스에 저장 (이후 검색에 반영) |
+
+> 도구 중 `search_similar_cases` · `inspect_image` · `compare_with_past_wafer` · `save_case_to_knowledge`는 LUXIA Cloud의 embedding/rerank/멀티모달 chat을 사용하므로 `LUXIA_API_KEY`가 필요하다. 키가 없으면 각각 로컬 검색·스텁 응답으로 graceful하게 대체된다.
+
 ## 사전 요구사항
 
 | 도구 | 최소 버전 |
