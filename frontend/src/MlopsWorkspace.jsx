@@ -4,7 +4,7 @@ import MlopsView from "./MlopsView";
 import MlopsAgentView from "./MlopsAgentView";
 
 const SUBS = [
-  { id: "console", label: "모델·드리프트 콘솔", en: "Console", icon: "box" },
+  { id: "console", label: "모델 운영 콘솔", en: "Model Registry & Retraining", icon: "box" },
   { id: "agent",   label: "MLOps 에이전트", en: "MLOps Agent", icon: "bot" },
 ];
 

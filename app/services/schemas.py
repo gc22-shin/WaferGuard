@@ -54,6 +54,8 @@ class InspectionChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
     history: list[dict[str, str]] = Field(default_factory=list, max_length=20)
     use_llm: bool = True
+    # on-screen AI recommendation (probable causes / next actions) the user is viewing
+    extra_context: str = Field(default="", max_length=2000)
 
 
 class ReviewRequest(BaseModel):

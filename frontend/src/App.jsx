@@ -7,6 +7,7 @@ import DatabaseView    from "./DatabaseView";
 import AlertCenterView from "./AlertCenterView";
 import SettingsView    from "./SettingsView";
 import { SettingsProvider, useStream } from "./SettingsContext";
+import { MlopsAgentProvider } from "./MlopsAgentContext";
 
 const NAV = [
   { id: "inspect", icon: "layers",  label: "실시간 검사",    en: "Live Inspection", View: InspectionWorkspace },
@@ -199,7 +200,9 @@ function AppInner() {
 export default function App() {
   return (
     <SettingsProvider>
-      <AppInner />
+      <MlopsAgentProvider>
+        <AppInner />
+      </MlopsAgentProvider>
     </SettingsProvider>
   );
 }

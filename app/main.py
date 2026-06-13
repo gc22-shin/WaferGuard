@@ -113,7 +113,8 @@ def inspection_chat(inspection_id: str, request: InspectionChatRequest) -> dict[
         raise HTTPException(status_code=404, detail="Inspection not found")
     trace = get_agent_trace_for_inspection(inspection_id)
     return chat_about_inspection(
-        record, request.message, request.history, trace, use_llm=request.use_llm
+        record, request.message, request.history, trace,
+        use_llm=request.use_llm, extra_context=request.extra_context,
     )
 
 
@@ -129,7 +130,8 @@ def inspection_chat_stream(inspection_id: str, request: InspectionChatRequest) -
     def event_source():
         try:
             for event in stream_chat_about_inspection(
-                record, request.message, request.history, trace, use_llm=request.use_llm
+                record, request.message, request.history, trace,
+                use_llm=request.use_llm, extra_context=request.extra_context,
             ):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as exc:  # noqa: BLE001

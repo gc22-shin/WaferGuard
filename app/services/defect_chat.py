@@ -162,6 +162,7 @@ def stream_chat_about_inspection(
     history: list[dict] | None = None,
     trace: dict | None = None,
     use_llm: bool = True,
+    extra_context: str = "",
 ) -> Iterator[dict]:
     """Agentic chat turn, yielding SSE-friendly event dicts.
 
@@ -180,8 +181,11 @@ def stream_chat_about_inspection(
 
     image_urls = [u for u in [record.get("overlay_url"), record.get("roi_url")] if u]
 
+    system_content = _SYSTEM_PROMPT + "\n\n[검사 Evidence]\n" + _evidence_context(record, trace)
+    if extra_context and extra_context.strip():
+        system_content += "\n\n[화면에 표시된 AI 추천 — 엔지니어가 보고 있는 내용]\n" + extra_context.strip()
     messages: list[dict] = [
-        {"role": "system", "content": _SYSTEM_PROMPT + "\n\n[검사 Evidence]\n" + _evidence_context(record, trace)},
+        {"role": "system", "content": system_content},
     ]
     for turn in (history or [])[-_MAX_HISTORY:]:
         role = turn.get("role")
@@ -251,12 +255,13 @@ def chat_about_inspection(
     history: list[dict] | None = None,
     trace: dict | None = None,
     use_llm: bool = True,
+    extra_context: str = "",
 ) -> dict:
     """Non-streaming wrapper: drains the stream and returns the final dict."""
     reply = ""
     agent_mode = "llm"
     tool_calls: list[dict] = []
-    for event in stream_chat_about_inspection(record, message, history, trace, use_llm):
+    for event in stream_chat_about_inspection(record, message, history, trace, use_llm, extra_context):
         if event.get("type") == "done":
             reply = event.get("reply", "")
             agent_mode = event.get("agent_mode", "llm")

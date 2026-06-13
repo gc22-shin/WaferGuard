@@ -101,13 +101,13 @@ function EvidenceBlock({ source }) {
 function EvidenceTrigger({ source, onOpen }) {
   const tag = source?.type === "metrology" ? "계측 근거" : "RAG 근거";
   return (
-    <button onClick={onOpen} className="focusable"
+    <button onClick={onOpen} className="focusable" title={`${tag} 보기`}
       style={{
-        display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer",
-        background: "transparent", border: "none", padding: "2px 0", alignSelf: "flex-start",
-        color: "var(--text-3)", font: "inherit", fontSize: 10.5,
+        display: "inline-flex", alignItems: "center", gap: 3, cursor: "pointer", flex: "none",
+        background: "transparent", border: "1px solid var(--border-soft)", borderRadius: 6,
+        padding: "2px 6px", color: "var(--text-3)", font: "inherit", fontSize: 9.5,
       }}>
-      <Icon name="history" size={11} />{tag} 보기
+      <Icon name="history" size={10} />근거
     </button>
   );
 }
@@ -186,43 +186,41 @@ function EvidenceModal({ entry, cases, onClose }) {
 
 function CauseCard({ idx, cause, onEvidence }) {
   return (
-    <div className="panel-inset" style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+    <div className="panel-inset" style={{ padding: "6px 9px", display: "flex", flexDirection: "column", gap: 5 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
         <span className="mono" style={{
-          fontSize: 10, fontWeight: 700, color: "var(--accent)", background: "var(--accent-dim)",
-          borderRadius: 5, padding: "1px 6px", flex: "none",
-        }}>#{idx + 1}</span>
-        <span style={{ fontSize: 12, color: "var(--text)", fontWeight: 600, flex: 1, minWidth: 0 }}>{cause.label}</span>
-        <span className="mono" style={{ fontSize: 12, color: "var(--accent)", fontWeight: 600 }}>{(cause.conf * 100).toFixed(0)}%</span>
+          fontSize: 9, fontWeight: 700, color: "var(--accent)", background: "var(--accent-dim)",
+          borderRadius: 4, padding: "1px 5px", flex: "none",
+        }}>{idx + 1}</span>
+        <span style={{ fontSize: 11.5, color: "var(--text)", fontWeight: 600, flex: 1, minWidth: 0 }}>{cause.label}</span>
+        <span className="mono" style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>{(cause.conf * 100).toFixed(0)}%</span>
+        <EvidenceTrigger source={cause.source} onOpen={() => onEvidence({ kind: "cause", label: cause.label, conf: cause.conf, source: cause.source })} />
       </div>
-      <div style={{ height: 4, background: "var(--panel-2)", borderRadius: 99, overflow: "hidden" }}>
+      <div style={{ height: 3, background: "var(--panel-2)", borderRadius: 99, overflow: "hidden" }}>
         <div style={{ width: `${cause.conf * 100}%`, height: "100%", background: "var(--accent)", opacity: .7, borderRadius: 99 }} />
       </div>
-      <EvidenceTrigger source={cause.source} onOpen={() => onEvidence({ kind: "cause", label: cause.label, conf: cause.conf, source: cause.source })} />
     </div>
   );
 }
 
 function ActionRow({ idx, action, onExecute, onEvidence, disabled, busy }) {
   return (
-    <div className="panel-inset" style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
-        <span style={{ fontSize: 12, color: "var(--text)", fontWeight: 500, flex: 1, minWidth: 0, lineHeight: 1.5 }}>{action.label}</span>
-        <button className={`btn ${idx === 0 && !disabled ? "btn-accent" : ""}`}
-          disabled={disabled || busy}
-          onClick={() => onExecute(action)}
-          style={{ padding: "4px 10px", fontSize: 11, flex: "none", opacity: disabled ? .5 : 1 }}>
-          <Icon name="play" size={11} />실행
-        </button>
-      </div>
+    <div className="panel-inset" style={{ padding: "6px 9px", display: "flex", alignItems: "center", gap: 7 }}>
+      <span style={{ fontSize: 11.5, color: "var(--text)", fontWeight: 500, flex: 1, minWidth: 0, lineHeight: 1.45 }}>{action.label}</span>
       <EvidenceTrigger source={action.source} onOpen={() => onEvidence({ kind: "action", label: action.label, source: action.source })} />
+      <button className={`btn ${idx === 0 && !disabled ? "btn-accent" : ""}`}
+        disabled={disabled || busy}
+        onClick={() => onExecute(action)}
+        style={{ padding: "3px 9px", fontSize: 10.5, flex: "none", opacity: disabled ? .5 : 1 }}>
+        <Icon name="play" size={10} />실행
+      </button>
     </div>
   );
 }
 
 /* ---------- chat ---------- */
 
-function DefectChat({ inspectionId, llmOn }) {
+function DefectChat({ inspectionId, llmOn, causes, actions }) {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -259,6 +257,21 @@ function DefectChat({ inspectionId, llmOn }) {
     }
   }
 
+  // pass the on-screen probable causes / next actions into the chat context so
+  // the assistant references exactly what the engineer is looking at
+  function buildExtraContext() {
+    const lines = [];
+    if (causes?.length) {
+      lines.push("화면에 표시된 추정 원인 (확신도순):");
+      causes.forEach((c, i) => lines.push(`${i + 1}. ${c.label} (${Math.round((c.conf ?? 0) * 100)}%)`));
+    }
+    if (actions?.length) {
+      lines.push("화면에 표시된 권장 액션:");
+      actions.forEach((a, i) => lines.push(`${i + 1}. ${a.label}`));
+    }
+    return lines.join("\n");
+  }
+
   async function send() {
     const text = input.trim();
     if (!text || busy || !inspectionId || !llmOn) return;
@@ -273,7 +286,7 @@ function DefectChat({ inspectionId, llmOn }) {
       const res = await fetch(`${API_BASE}/api/v1/inspect/${inspectionId}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history, use_llm: llmOn }),
+        body: JSON.stringify({ message: text, history, use_llm: llmOn, extra_context: buildExtraContext() }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       const reader = res.body.getReader();
@@ -593,16 +606,16 @@ export default function AgentView({ focusId, onFocusHandled }) {
               {/* AI recommendation + chat */}
               <Panel title="AI 추천 · 추정 원인 / 권장 액션" icon="shield" dense
                 right={<span className="chip" style={{ color: "var(--accent)", borderColor: "var(--accent-line)" }}>근거: RAG + 계측 룰</span>}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1.1fr", gap: 16, alignItems: "start" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1.1fr", gap: 14, alignItems: "start" }}>
                   <div>
-                    <div className="label-cap" style={{ marginBottom: 8 }}>추정 원인 · Probable Causes</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div className="label-cap" style={{ marginBottom: 6 }}>추정 원인 · Probable Causes</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                       {causes.map((c, i) => <CauseCard key={i} idx={i} cause={c} onEvidence={setEvidence} />)}
                     </div>
                   </div>
                   <div>
-                    <div className="label-cap" style={{ marginBottom: 8 }}>권장 액션 · Next Actions</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div className="label-cap" style={{ marginBottom: 6 }}>권장 액션 · Next Actions</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                       {actions.map((a, i) => (
                         <ActionRow key={i} idx={i} action={a} onExecute={executeAction} onEvidence={setEvidence} disabled={decided} busy={busy} />
                       ))}
@@ -615,8 +628,8 @@ export default function AgentView({ focusId, onFocusHandled }) {
                   </div>
                 </div>
 
-                <div className="divider" style={{ margin: "14px 0" }} />
-                <DefectChat inspectionId={selected.id} llmOn={settings.useLlm} />
+                <div className="divider" style={{ margin: "12px 0" }} />
+                <DefectChat inspectionId={selected.id} llmOn={settings.useLlm} causes={causes} actions={actions} />
               </Panel>
       </div>
       )}
