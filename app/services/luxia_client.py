@@ -250,9 +250,19 @@ def rerank(query: str, documents: list[str], top_k: int = 3) -> list[dict]:
         )
         resp.raise_for_status()
         data = resp.json()
-        # Response shape: {"results": [{"index": int, "relevance_score": float}]}
-        results = data.get("results", [])
-        return [{"index": r["index"], "relevance_score": r["relevance_score"]} for r in results]
+        # Expected: {"results": [{"index": int, "relevance_score": float}]}, but the
+        # gateway sometimes uses alternate key names — tolerate them rather than failing.
+        results = data.get("results") or data.get("data") or []
+        normalized: list[dict] = []
+        for i, r in enumerate(results):
+            if not isinstance(r, dict):
+                continue
+            idx = r.get("index", r.get("document_index", r.get("corpus_id", i)))
+            score = r.get("relevance_score", r.get("score", r.get("relevance", 1.0 - i * 0.01)))
+            normalized.append({"index": int(idx), "relevance_score": float(score)})
+        if not normalized:
+            raise ValueError(f"unrecognized rerank response shape: {list(data)[:5]}")
+        return normalized
     except Exception as exc:  # noqa: BLE001
         logger.error("Luxia rerank failed: %s", exc)
         return [

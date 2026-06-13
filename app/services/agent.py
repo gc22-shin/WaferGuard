@@ -177,6 +177,24 @@ _TOOL_SCHEMAS: list[dict] = [
     },
 ]
 
+# Read-only lookup tools (Gap 1) — let the Agent actually run its playbook
+# ("동일 설비 반복 여부 확인", "최근 24h 트렌드 비교") instead of telling a human to.
+# Reuses the schemas defined in tools.py to avoid drift.
+_LOOKUP_TOOL_NAMES = {
+    "get_equipment_history",
+    "get_metrology_trend",
+    "get_mlops_state",
+    "compare_with_past_wafer",
+}
+try:
+    from app.services.tools import TOOL_SCHEMAS as _TOOLS_SCHEMAS  # noqa: PLC0415
+
+    _TOOL_SCHEMAS.extend(
+        s for s in _TOOLS_SCHEMAS if s.get("function", {}).get("name") in _LOOKUP_TOOL_NAMES
+    )
+except ImportError:
+    logger.warning("tools.py lookup schemas unavailable; Agent runs without DB lookup tools.")
+
 # ---------------------------------------------------------------------------
 # System prompt
 # ---------------------------------------------------------------------------
@@ -191,7 +209,13 @@ _SYSTEM_PROMPT = """당신은 WaferGuard Fab Ops Agent입니다.
 4. 판단이 불확실하면 enqueue_for_review로 엔지니어에게 넘깁니다.
 5. 최종 판단은 한국어로 간결하게 작성합니다.
 6. 본 시뮬레이션에서 결함 분류는 입력값이며, Agent는 분류 결과에 대한 운영 판단을 시뮬레이션합니다.
-7. RAG corpus는 50건 한정이며 사내 문서 검색이 아닙니다."""
+
+조회 도구 활용 (사람에게 시키지 말고 직접 확인하세요):
+- 반복성 결함인지 판단하려면 get_equipment_history(equipment_id, defect_type)로 같은 설비의 최근 동일 결함 횟수를 직접 조회합니다.
+- 계측값이 이번만 튄 건지, 계속 밀리는 건지 구분하려면 get_metrology_trend(equipment_id, metric)로 추세를 확인합니다.
+- recommend_retrain을 호출하기 전에 get_mlops_state로 현재 모델 성능과 drift 증거를 먼저 확인합니다.
+- 과거 사례 이미지와 직접 대조가 필요하면 compare_with_past_wafer를 사용합니다.
+조회 결과를 최종 판단의 근거로 명시적으로 인용하세요 (예: "ETCH-02에서 24h 내 Scratch 5회 → 반복성, 설비 점검 우선")."""
 
 # ---------------------------------------------------------------------------
 # LangGraph State
@@ -224,6 +248,10 @@ def _get_tool_registry() -> dict[str, Any]:
             "enqueue_for_review": tools.enqueue_for_review,
             "trigger_critical_alert": tools.trigger_critical_alert,
             "recommend_retrain": tools.recommend_retrain,
+            "get_equipment_history": tools.get_equipment_history,
+            "get_metrology_trend": tools.get_metrology_trend,
+            "get_mlops_state": tools.get_mlops_state,
+            "compare_with_past_wafer": tools.compare_with_past_wafer,
         }
     except (ImportError, AttributeError) as exc:
         logger.warning("tools.py not available (%s); using no-op stubs.", exc)
@@ -240,6 +268,10 @@ def _stub_registry() -> dict[str, Any]:
         "enqueue_for_review": lambda **kwargs: _stub(**kwargs),
         "trigger_critical_alert": lambda **kwargs: _stub(**kwargs),
         "recommend_retrain": lambda **kwargs: _stub(**kwargs),
+        "get_equipment_history": lambda **kwargs: _stub(**kwargs),
+        "get_metrology_trend": lambda **kwargs: _stub(**kwargs),
+        "get_mlops_state": lambda **kwargs: _stub(**kwargs),
+        "compare_with_past_wafer": lambda **kwargs: _stub(**kwargs),
     }
 
 

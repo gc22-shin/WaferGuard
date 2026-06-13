@@ -222,6 +222,36 @@ function ActionRow({ idx, action, onExecute, onEvidence, disabled, busy }) {
 
 /* ---------- chat ---------- */
 
+// tool → display label/icon for the live tool-activity UI
+const TOOL_META = {
+  search_similar_cases:   { icon: "history",  label: "RAG 유사 사례 검색" },
+  get_equipment_history:  { icon: "layers",   label: "설비 이력 조회" },
+  get_metrology_trend:    { icon: "activity", label: "계측 추세 조회" },
+  get_mlops_state:        { icon: "cpu",      label: "MLOps 상태 조회" },
+  compare_with_past_wafer:{ icon: "zoom",     label: "웨이퍼 이미지 비교" },
+};
+
+function ToolActivity({ tool }) {
+  const meta = TOOL_META[tool.name] || { icon: "cpu", label: tool.name };
+  const running = tool.status === "running";
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 6, fontSize: 10.5,
+      padding: "5px 8px", borderRadius: 6, marginBottom: 4,
+      background: "var(--accent-dim)", border: "1px solid var(--accent-line)",
+      color: running ? "var(--accent)" : "var(--text-2)",
+    }}>
+      <Icon name={running ? "refresh" : "check"} size={11}
+        style={running ? { animation: "spin 1s linear infinite" } : undefined} />
+      <Icon name={meta.icon} size={11} />
+      <span style={{ fontWeight: 600 }}>{meta.label}</span>
+      <span style={{ color: "var(--text-3)" }}>
+        {running ? "실행 중…" : (tool.summary || "완료")}
+      </span>
+    </div>
+  );
+}
+
 function DefectChat({ inspectionId, llmOn }) {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
@@ -233,25 +263,68 @@ function DefectChat({ inspectionId, llmOn }) {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [msgs, busy]);
 
+  // update the last (assistant) message immutably
+  const patchLast = (fn) => setMsgs(m => {
+    if (!m.length) return m;
+    const copy = m.slice();
+    copy[copy.length - 1] = fn(copy[copy.length - 1]);
+    return copy;
+  });
+
+  function applyEvent(ev) {
+    if (ev.type === "tool_call") {
+      patchLast(a => ({ ...a, tools: [...(a.tools || []), { name: ev.name, args: ev.args, status: "running" }] }));
+    } else if (ev.type === "tool_result") {
+      patchLast(a => {
+        const tools = (a.tools || []).slice();
+        for (let i = tools.length - 1; i >= 0; i--) {
+          if (tools[i].status === "running") { tools[i] = { ...tools[i], status: "done", summary: ev.summary }; break; }
+        }
+        return { ...a, tools };
+      });
+    } else if (ev.type === "token") {
+      patchLast(a => ({ ...a, content: (a.content || "") + ev.text }));
+    } else if (ev.type === "done") {
+      patchLast(a => ({ ...a, content: ev.reply || a.content || "응답 없음", streaming: false }));
+    }
+  }
+
   async function send() {
     const text = input.trim();
     if (!text || busy || !inspectionId || !llmOn) return;
     const history = msgs.map(m => ({ role: m.role, content: m.content }));
-    setMsgs(m => [...m, { role: "user", content: text }]);
+    setMsgs(m => [...m,
+      { role: "user", content: text },
+      { role: "assistant", content: "", tools: [], streaming: true },
+    ]);
     setInput("");
     setBusy(true);
     try {
-      const res = await fetch(`${API_BASE}/api/v1/inspect/${inspectionId}/chat`, {
+      const res = await fetch(`${API_BASE}/api/v1/inspect/${inspectionId}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message: text, history, use_llm: llmOn }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setMsgs(m => [...m, { role: "assistant", content: data.reply || "응답 없음" }]);
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const blocks = buf.split("\n\n");
+        buf = blocks.pop() || "";
+        for (const block of blocks) {
+          const line = block.split("\n").find(l => l.startsWith("data:"));
+          if (!line) continue;
+          try { applyEvent(JSON.parse(line.slice(5).trim())); } catch { /* skip partial */ }
+        }
+      }
     } catch (e) {
-      setMsgs(m => [...m, { role: "assistant", content: `오류: 응답을 받지 못했습니다 (${e.message})` }]);
+      patchLast(a => ({ ...a, content: `오류: 응답을 받지 못했습니다 (${e.message})`, streaming: false }));
     } finally {
+      patchLast(a => ({ ...a, streaming: false }));
       setBusy(false);
     }
   }
@@ -261,6 +334,7 @@ function DefectChat({ inspectionId, llmOn }) {
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
         <Icon name="bot" size={13} style={{ color: "var(--accent)" }} />
         <span className="label-cap">결함 Q&A · Defect Chat</span>
+        <span className="chip" style={{ fontSize: 9, color: "var(--accent)", borderColor: "var(--accent-line)" }}>툴 사용 에이전트</span>
         {!llmOn && <span className="chip" style={{ fontSize: 9, color: "var(--med)", borderColor: "var(--med)" }}>LLM 꺼짐</span>}
       </div>
       <div style={{ border: "1px solid var(--border-soft)", borderRadius: 9, overflow: "hidden" }}>
@@ -269,31 +343,39 @@ function DefectChat({ inspectionId, llmOn }) {
           <div style={{ margin: "auto", textAlign: "center", fontSize: 11.5, color: "var(--text-3)", lineHeight: 1.7 }}>
             {llmOn ? (
               <>
-                이 결함에 대해 무엇이든 질문하세요.<br />
-                예: <span className="mono" style={{ fontSize: 10.5 }}>"이 패턴이 반복되면 어떤 설비부터 봐야 해?"</span>
+                이 결함에 대해 무엇이든 질문하세요. 에이전트가 설비 이력·계측 추세를 직접 조회합니다.<br />
+                예: <span className="mono" style={{ fontSize: 10.5 }}>"이 설비에서 같은 결함 최근에도 났어?"</span>
               </>
             ) : (
               <>설정에서 LLM 호출이 꺼져 있어 채팅을 사용할 수 없습니다.<br />설정 탭의 'Agent LLM 분석'을 켜주세요.</>
             )}
           </div>
         )}
-        {msgs.map((m, i) => (
-          <div key={i} style={{
-            alignSelf: m.role === "user" ? "flex-end" : "flex-start",
-            maxWidth: "78%",
-            background: m.role === "user" ? "var(--accent-dim)" : "var(--panel-2)",
-            border: `1px solid ${m.role === "user" ? "var(--accent-line)" : "var(--border-soft)"}`,
-            borderRadius: 10, padding: "8px 11px",
-            fontSize: 12, lineHeight: 1.6, color: "var(--text)", whiteSpace: "pre-wrap",
-          }}>
-            {m.content}
-          </div>
-        ))}
-        {busy && (
-          <div style={{ alignSelf: "flex-start", fontSize: 11, color: "var(--text-3)", display: "flex", alignItems: "center", gap: 6 }}>
-            <Icon name="refresh" size={12} style={{ animation: "spin 1s linear infinite" }} />분석 중…
-          </div>
-        )}
+        {msgs.map((m, i) => {
+          const isUser = m.role === "user";
+          const hasTools = !isUser && m.tools && m.tools.length > 0;
+          const showCursor = !isUser && m.streaming && (m.content || "").length > 0;
+          const thinking = !isUser && m.streaming && !hasTools && !(m.content || "").length;
+          return (
+            <div key={i} style={{
+              alignSelf: isUser ? "flex-end" : "flex-start",
+              maxWidth: "82%",
+              background: isUser ? "var(--accent-dim)" : "var(--panel-2)",
+              border: `1px solid ${isUser ? "var(--accent-line)" : "var(--border-soft)"}`,
+              borderRadius: 10, padding: "8px 11px",
+              fontSize: 12, lineHeight: 1.6, color: "var(--text)", whiteSpace: "pre-wrap",
+            }}>
+              {hasTools && m.tools.map((t, ti) => <ToolActivity key={ti} tool={t} />)}
+              {thinking ? (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--text-3)" }}>
+                  <Icon name="refresh" size={12} style={{ animation: "spin 1s linear infinite" }} />분석 중…
+                </span>
+              ) : (
+                <>{m.content}{showCursor && <span className="blink-cursor">▍</span>}</>
+              )}
+            </div>
+          );
+        })}
       </div>
       <div style={{ display: "flex", gap: 8, padding: "10px 12px", borderTop: "1px solid var(--border)" }}>
         <input

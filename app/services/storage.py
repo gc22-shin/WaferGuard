@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import struct
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
@@ -234,6 +234,151 @@ def list_inspections_for_handoff(line_id: str, limit: int = 50) -> list[dict[str
     with connect() as conn:
         rows = conn.execute(query, params).fetchall()
     return [_inspection_to_dict(row) for row in rows]
+
+
+def _time_threshold(hours: float) -> str:
+    return (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
+
+
+def equipment_history(
+    equipment_id: str,
+    defect_type: str | None = None,
+    hours: float = 24.0,
+    limit: int = 12,
+) -> dict[str, object]:
+    """Recent inspection history for one piece of equipment.
+
+    Used by the Agent/chat to judge recurrence: e.g. "ETCH-02 had Scratch 5x in
+    24h → recurring, prioritise equipment check". Queries the inspections table.
+    """
+    threshold = _time_threshold(hours)
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, wafer_id, lot_id, defect_type, risk_level, risk_score, confidence, created_at
+            FROM inspections
+            WHERE equipment_id = ? AND created_at >= ?
+            ORDER BY created_at DESC
+            """,
+            (equipment_id, threshold),
+        ).fetchall()
+
+    records = [dict(r) for r in rows]
+    by_defect: dict[str, int] = {}
+    high_risk = 0
+    for r in records:
+        dt = str(r.get("defect_type"))
+        by_defect[dt] = by_defect.get(dt, 0) + 1
+        if r.get("risk_level") in ("High", "Medium"):
+            high_risk += 1
+
+    same_defect = by_defect.get(defect_type, 0) if defect_type else 0
+    total = len(records)
+    # Recurrence heuristic: same defect ≥3 in the window, or it dominates volume.
+    recurring = bool(
+        defect_type
+        and (same_defect >= 3 or (total >= 4 and same_defect / max(total, 1) >= 0.5))
+    )
+
+    return {
+        "equipment_id": equipment_id,
+        "window_hours": hours,
+        "defect_type_filter": defect_type,
+        "total_inspections": total,
+        "same_defect_count": same_defect,
+        "by_defect": by_defect,
+        "high_or_medium_risk_count": high_risk,
+        "is_recurring": recurring,
+        "recent": [
+            {
+                "id": r["id"],
+                "wafer_id": r["wafer_id"],
+                "defect_type": r["defect_type"],
+                "risk_level": r["risk_level"],
+                "risk_score": round(float(r["risk_score"] or 0), 3),
+                "created_at": r["created_at"],
+            }
+            for r in records[:limit]
+        ],
+    }
+
+
+_METROLOGY_METRICS = {"cd_nm", "overlay_nm", "film_thickness_nm", "roughness_nm", "defect_count", "yield_proxy"}
+
+
+def metrology_trend(
+    equipment_id: str,
+    metric: str = "overlay_nm",
+    hours: float = 72.0,
+    max_points: int = 40,
+) -> dict[str, object]:
+    """Time series of one metrology metric for an equipment, to tell a one-off
+    spike apart from a sustained drift. Reads metrology_json from inspections."""
+    if metric not in _METROLOGY_METRICS:
+        return {"error": f"unknown metric '{metric}'", "valid_metrics": sorted(_METROLOGY_METRICS)}
+    threshold = _time_threshold(hours)
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT created_at, metrology_json
+            FROM inspections
+            WHERE equipment_id = ? AND created_at >= ? AND metrology_json IS NOT NULL
+            ORDER BY created_at ASC
+            """,
+            (equipment_id, threshold),
+        ).fetchall()
+
+    points: list[dict[str, object]] = []
+    for r in rows:
+        try:
+            met = json.loads(r["metrology_json"])
+        except (TypeError, json.JSONDecodeError):
+            continue
+        val = met.get(metric)
+        if isinstance(val, (int, float)):
+            points.append({"t": r["created_at"], "value": round(float(val), 4)})
+
+    n = len(points)
+    if n == 0:
+        return {
+            "equipment_id": equipment_id,
+            "metric": metric,
+            "window_hours": hours,
+            "n": 0,
+            "points": [],
+            "note": "해당 기간에 계측 데이터가 없습니다.",
+        }
+
+    values = [float(p["value"]) for p in points]
+    first, last = values[0], values[-1]
+    mean = sum(values) / n
+    delta = last - first
+    # simple drift classification relative to the series mean
+    rel = (delta / mean) if mean else 0.0
+    if abs(rel) < 0.05 or n < 3:
+        trend = "stable"
+    elif rel > 0:
+        trend = "rising"
+    else:
+        trend = "falling"
+
+    # downsample to the most recent max_points for transport
+    sampled = points[-max_points:]
+    return {
+        "equipment_id": equipment_id,
+        "metric": metric,
+        "window_hours": hours,
+        "n": n,
+        "first": round(first, 4),
+        "last": round(last, 4),
+        "min": round(min(values), 4),
+        "max": round(max(values), 4),
+        "mean": round(mean, 4),
+        "delta": round(delta, 4),
+        "pct_change": round(rel * 100, 1),
+        "trend": trend,
+        "points": sampled,
+    }
 
 
 def record_review(inspection_id: str, decision: str, reviewer: str, note: str) -> dict[str, object] | None:

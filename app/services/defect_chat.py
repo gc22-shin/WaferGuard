@@ -1,24 +1,52 @@
 """
-Defect chat — LLM Q&A about a single inspection, grounded in its evidence.
+Defect chat — agentic LLM Q&A about a single inspection.
 
-The frontend keeps the conversation state and sends it back as `history`;
-the backend is stateless and rebuilds the evidence context on every turn.
+The chat is grounded in the inspection's evidence but is no longer single-shot:
+it can call read-only tools (equipment history, metrology trend, MLOps state,
+RAG search, multimodal wafer comparison) to answer questions whose answer is not
+in the static evidence ("이 설비 최근에도 이랬어?").
+
+Two entry points share one loop:
+- ``stream_chat_about_inspection`` yields event dicts for SSE (tool_call /
+  tool_result / token / done).
+- ``chat_about_inspection`` consumes the stream and returns the final dict
+  (kept for the non-streaming endpoint).
 """
 from __future__ import annotations
 
+import json
+import logging
 import os
+from collections.abc import Iterator
 
 from app.services import luxia_client
 
+logger = logging.getLogger(__name__)
+
 _MAX_HISTORY = 10
+_MAX_ITERATIONS = 4
+_CHUNK_SIZE = 3  # chars per streamed token-ish chunk
+
+# Read-only tools the chat agent may call. Names map into tools.TOOL_REGISTRY.
+_CHAT_TOOL_NAMES = (
+    "search_similar_cases",
+    "get_equipment_history",
+    "get_metrology_trend",
+    "get_mlops_state",
+    "compare_with_past_wafer",
+)
 
 _SYSTEM_PROMPT = (
     "당신은 WaferGuard의 결함 분석 어시스턴트입니다. "
-    "아래 제공된 검사 evidence를 근거로 엔지니어의 질문에 한국어로 간결하게 답합니다.\n"
+    "아래 제공된 검사 evidence를 1차 근거로 삼아 엔지니어의 질문에 한국어로 간결하게 답합니다.\n"
     "규칙:\n"
-    "1. 제공된 evidence(분류 결과, 계측값, 룰 히트, RAG 유사 사례, Agent 판단) 범위 안에서 답합니다.\n"
-    "2. evidence에 없는 수치나 사례를 만들어내지 않습니다. 모르면 모른다고 답합니다.\n"
-    "3. 답변은 3~6문장 이내로, 필요하면 점검 순서를 번호로 제시합니다."
+    "1. evidence로 답할 수 있으면 evidence 범위 안에서 답합니다.\n"
+    "2. evidence에 없는 정보(같은 설비의 과거 이력, 계측 추세, 모델/drift 상태, 추가 유사 사례)가 "
+    "필요하면 제공된 도구를 호출해 실제 데이터를 조회한 뒤 답합니다. 수치를 지어내지 않습니다.\n"
+    "3. 'ETCH-02에서 최근에도 이랬어?' 같은 질문은 get_equipment_history로, "
+    "'계속 밀리는 거야?'는 get_metrology_trend로 직접 확인합니다.\n"
+    "4. 도구 결과는 답변에 근거로 인용합니다 (예: '24h 내 동일 결함 5회 → 반복성').\n"
+    "5. 답변은 3~6문장 이내로, 필요하면 점검 순서를 번호로 제시합니다."
 )
 
 
@@ -55,25 +83,103 @@ def _evidence_context(record: dict, trace: dict | None) -> str:
         lines.append(f"Agent 판단: {trace['final_action']}")
     if record.get("report"):
         lines.append(f"분석 리포트: {record['report']}")
+    lines.append(
+        "\n[도구 사용 힌트] 이 설비 ID="
+        f"{record.get('equipment_id')}, 결함 유형={record.get('defect_type')}. "
+        "과거 이력/추세 질문에는 이 값을 도구 인자로 사용하세요."
+    )
     return "\n".join(lines)
 
 
-def chat_about_inspection(
+def _chat_tool_schemas() -> list[dict]:
+    try:
+        from app.services.tools import TOOL_SCHEMAS  # noqa: PLC0415
+
+        return [s for s in TOOL_SCHEMAS if s.get("function", {}).get("name") in _CHAT_TOOL_NAMES]
+    except ImportError:
+        return []
+
+
+def _chat_tool_registry() -> dict:
+    try:
+        from app.services.tools import TOOL_REGISTRY  # noqa: PLC0415
+
+        return {n: TOOL_REGISTRY[n] for n in _CHAT_TOOL_NAMES if n in TOOL_REGISTRY}
+    except ImportError:
+        return {}
+
+
+def _summarize_tool_result(name: str, result: object) -> str:
+    """Short human-readable line shown in the chat tool-activity UI."""
+    if not isinstance(result, dict):
+        if isinstance(result, list):
+            return f"{len(result)}건 반환"
+        return str(result)[:80]
+    if result.get("error"):
+        return f"오류: {result['error']}"
+    if name == "get_equipment_history":
+        rec = "· 반복성 결함" if result.get("is_recurring") else ""
+        return (
+            f"{result.get('equipment_id')} 최근 {result.get('window_hours')}h: "
+            f"검사 {result.get('total_inspections')}건, 동일결함 {result.get('same_defect_count')}회 {rec}"
+        )
+    if name == "get_metrology_trend":
+        return (
+            f"{result.get('metric')} 추세 {result.get('trend')} "
+            f"(Δ{result.get('delta')}, {result.get('pct_change')}%, n={result.get('n')})"
+        )
+    if name == "get_mlops_state":
+        pm = result.get("production_model") or {}
+        de = result.get("latest_drift_event") or {}
+        return f"운영모델 F1 {pm.get('f1_score', '?')}, drift {de.get('status', '?')}"
+    if name == "compare_with_past_wafer":
+        return "웨이퍼 이미지 비교 완료"
+    if name == "search_similar_cases":
+        return "유사 사례 검색 완료"
+    return "완료"
+
+
+def _stub_message(use_llm: bool) -> str:
+    if not use_llm:
+        return (
+            "설정에서 LLM 호출이 꺼져 있어 채팅 응답을 생성할 수 없습니다. "
+            "설정 탭의 'Agent LLM 분석'을 켜면 이 검사의 evidence를 근거로 답해드립니다."
+        )
+    return (
+        "LLM이 비활성 상태라 채팅 응답을 생성할 수 없습니다. "
+        ".env에 LUXIA_API_KEY를 설정하면 이 검사의 evidence를 근거로 질문에 답해드립니다."
+    )
+
+
+def _chunk_text(text: str, size: int = _CHUNK_SIZE) -> Iterator[str]:
+    for i in range(0, len(text), size):
+        yield text[i : i + size]
+
+
+def stream_chat_about_inspection(
     record: dict,
     message: str,
     history: list[dict] | None = None,
     trace: dict | None = None,
     use_llm: bool = True,
-) -> dict:
-    """One chat turn about an inspection. Returns {reply, agent_mode}."""
-    if not use_llm:
-        return {
-            "reply": (
-                "설정에서 LLM 호출이 꺼져 있어 채팅 응답을 생성할 수 없습니다. "
-                "설정 탭의 'Agent LLM 분석'을 켜면 이 검사의 evidence를 근거로 답해드립니다."
-            ),
-            "agent_mode": "stub",
-        }
+) -> Iterator[dict]:
+    """Agentic chat turn, yielding SSE-friendly event dicts.
+
+    Event types:
+      {"type": "tool_call", "name", "args"}
+      {"type": "tool_result", "name", "summary"}
+      {"type": "token", "text"}
+      {"type": "done", "reply", "agent_mode", "tool_calls"}
+    """
+    has_key = bool(os.environ.get("LUXIA_API_KEY", "").strip())
+    if not use_llm or not has_key:
+        msg = _stub_message(use_llm)
+        yield {"type": "token", "text": msg}
+        yield {"type": "done", "reply": msg, "agent_mode": "stub", "tool_calls": []}
+        return
+
+    image_urls = [u for u in [record.get("overlay_url"), record.get("roi_url")] if u]
+
     messages: list[dict] = [
         {"role": "system", "content": _SYSTEM_PROMPT + "\n\n[검사 Evidence]\n" + _evidence_context(record, trace)},
     ]
@@ -84,19 +190,75 @@ def chat_about_inspection(
             messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": message})
 
-    has_key = bool(os.environ.get("LUXIA_API_KEY", "").strip())
-    if not has_key:
-        return {
-            "reply": (
-                "LLM이 비활성 상태라 채팅 응답을 생성할 수 없습니다. "
-                ".env에 LUXIA_API_KEY를 설정하면 이 검사의 evidence를 근거로 질문에 답해드립니다."
-            ),
-            "agent_mode": "stub",
-        }
+    tools_schemas = _chat_tool_schemas()
+    registry = _chat_tool_registry()
+    tool_calls_log: list[dict] = []
 
-    result = luxia_client.chat_with_tools(messages)
-    reply = (
-        result.get("choices", [{}])[0].get("message", {}).get("content")
-        or "응답을 생성하지 못했습니다. 다시 시도해주세요."
-    )
-    return {"reply": reply, "agent_mode": "llm"}
+    for iteration in range(_MAX_ITERATIONS):
+        last_turn = iteration == _MAX_ITERATIONS - 1
+        resp = luxia_client.chat_with_tools(
+            messages,
+            tools=None if last_turn else tools_schemas,  # force a text answer on the last turn
+            image_urls=image_urls if iteration == 0 else None,
+        )
+        msg = resp.get("choices", [{}])[0].get("message", {}) or {}
+        tool_calls = msg.get("tool_calls") if not last_turn else None
+
+        if tool_calls:
+            messages.append(msg)
+            for tc in tool_calls:
+                fn = tc.get("function", {})
+                name = fn.get("name", "")
+                try:
+                    args = json.loads(fn.get("arguments", "{}"))
+                except json.JSONDecodeError:
+                    args = {}
+                yield {"type": "tool_call", "name": name, "args": args}
+
+                tool_fn = registry.get(name)
+                if tool_fn is None:
+                    result: object = {"error": f"unknown tool: {name}"}
+                else:
+                    try:
+                        result = tool_fn(**args)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("chat tool %s failed: %s", name, exc)
+                        result = {"error": str(exc)}
+
+                tool_calls_log.append({"name": name, "args": args, "result": result})
+                yield {"type": "tool_result", "name": name, "summary": _summarize_tool_result(name, result)}
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", name),
+                        "name": name,
+                        "content": json.dumps(result, ensure_ascii=False),
+                    }
+                )
+            continue
+
+        # Final answer — stream it out chunk by chunk.
+        content = msg.get("content") or "응답을 생성하지 못했습니다. 다시 시도해주세요."
+        for chunk in _chunk_text(content):
+            yield {"type": "token", "text": chunk}
+        yield {"type": "done", "reply": content, "agent_mode": "llm", "tool_calls": tool_calls_log}
+        return
+
+
+def chat_about_inspection(
+    record: dict,
+    message: str,
+    history: list[dict] | None = None,
+    trace: dict | None = None,
+    use_llm: bool = True,
+) -> dict:
+    """Non-streaming wrapper: drains the stream and returns the final dict."""
+    reply = ""
+    agent_mode = "llm"
+    tool_calls: list[dict] = []
+    for event in stream_chat_about_inspection(record, message, history, trace, use_llm):
+        if event.get("type") == "done":
+            reply = event.get("reply", "")
+            agent_mode = event.get("agent_mode", "llm")
+            tool_calls = event.get("tool_calls", [])
+    return {"reply": reply, "agent_mode": agent_mode, "tool_calls": tool_calls}

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.services.config import OUTPUT_DIR, ensure_runtime_dirs
@@ -14,7 +17,7 @@ from app.services.handoff import generate_handoff_report, get_latest_handoff_rep
 from app.services.mlops import pipeline_state, promote_latest, rollback, simulate_drift, simulate_retraining
 from app.services.pipeline import run_inspection
 from app.services.rag_eval import rag_evaluation_set
-from app.services.defect_chat import chat_about_inspection
+from app.services.defect_chat import chat_about_inspection, stream_chat_about_inspection
 from app.services.schemas import (
     AutomationTickRequest,
     DemoSeedRequest,
@@ -113,12 +116,75 @@ def inspection_chat(inspection_id: str, request: InspectionChatRequest) -> dict[
     )
 
 
+@app.post("/api/v1/inspect/{inspection_id}/chat/stream")
+def inspection_chat_stream(inspection_id: str, request: InspectionChatRequest) -> StreamingResponse:
+    """Agentic, streaming chat: emits tool_call / tool_result / token / done events
+    as Server-Sent Events so the UI can show tool activity and stream the answer."""
+    record = get_inspection(inspection_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Inspection not found")
+    trace = get_agent_trace_for_inspection(inspection_id)
+
+    def event_source():
+        try:
+            for event in stream_chat_about_inspection(
+                record, request.message, request.history, trace, use_llm=request.use_llm
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            err = {"type": "done", "reply": f"오류: 응답 생성 실패 ({exc})", "agent_mode": "error", "tool_calls": []}
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.post("/api/v1/review/{inspection_id}")
 def review(inspection_id: str, request: ReviewRequest) -> dict[str, object]:
     record = record_review(inspection_id, request.decision, request.reviewer, request.note)
     if record is None:
         raise HTTPException(status_code=404, detail="Inspection not found")
+    # RAG learning loop (Gap 3): an engineer-confirmed decision becomes retrievable
+    # knowledge, so the corpus gets smarter as the line operates.
+    record["knowledge_saved"] = _ingest_reviewed_case(record, request)
     return record
+
+
+def _ingest_reviewed_case(record: dict[str, object], request: ReviewRequest) -> dict[str, object] | None:
+    try:
+        from app.services.tools import save_case_to_knowledge  # noqa: PLC0415
+
+        defect = record.get("defect_type", "결함")
+        equip = record.get("equipment_id", "?")
+        note = (request.note or "").strip()
+        decision_label = {
+            "approved": "조치 완료",
+            "needs_review": "추가 리뷰 필요",
+            "false_alarm": "오탐 처리",
+        }.get(request.decision, request.decision)
+        title = f"{defect} 대응 — {equip}"
+        summary = (
+            f"{record.get('risk_level')} 리스크(score {float(record.get('risk_score') or 0):.2f}) "
+            f"{defect} 검사를 {decision_label}로 처리."
+        )
+        action = note or decision_label
+        return save_case_to_knowledge(
+            title=title,
+            summary=summary,
+            action=action,
+            defect_type=str(defect),
+            metadata={
+                "inspection_id": record.get("id"),
+                "decision": request.decision,
+                "reviewer": request.reviewer,
+                "equipment_id": equip,
+            },
+        )
+    except Exception:  # noqa: BLE001
+        return None
 
 
 @app.post("/api/v1/demo/seed")

@@ -18,10 +18,12 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def _get_luxia_client():
+    # luxia_client exposes module-level functions (chat_with_tools/embed/rerank),
+    # so the module itself is the "client" object the tools call into.
     try:
-        from app.services.luxia_client import luxia_client  # noqa: PLC0415
+        import app.services.luxia_client as luxia_client  # noqa: PLC0415
         return luxia_client
-    except (ImportError, AttributeError):
+    except ImportError:
         return None
 
 
@@ -250,6 +252,161 @@ def recommend_retrain(reason: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Tool 6: get_equipment_history  (Gap 1 — let the Agent run its own playbook)
+# ---------------------------------------------------------------------------
+
+def get_equipment_history(equipment_id: str, defect_type: str | None = None, hours: float = 24.0) -> dict:
+    """Same-equipment recent inspection history / recurrence.
+
+    Answers "ETCH-02에서 Scratch가 24시간 내 몇 번?" directly from the DB instead
+    of telling a human to check. Returns counts, defect breakdown, recurrence flag.
+    """
+    storage = _get_storage()
+    if storage is None:
+        return {"error": "storage unavailable"}
+    try:
+        fn = getattr(storage, "equipment_history", None)
+        if fn is None:
+            return {"error": "equipment_history not available"}
+        return fn(equipment_id, defect_type=defect_type, hours=hours)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("get_equipment_history failed: %s", exc)
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Tool 7: get_metrology_trend  (one-off spike vs sustained drift)
+# ---------------------------------------------------------------------------
+
+def get_metrology_trend(equipment_id: str, metric: str = "overlay_nm", hours: float = 72.0) -> dict:
+    """CD/Overlay/thickness trend over time for one equipment.
+
+    Distinguishes a single outlier from a sustained drift. Reads the inspections
+    table's metrology series.
+    """
+    storage = _get_storage()
+    if storage is None:
+        return {"error": "storage unavailable"}
+    try:
+        fn = getattr(storage, "metrology_trend", None)
+        if fn is None:
+            return {"error": "metrology_trend not available"}
+        return fn(equipment_id, metric=metric, hours=hours)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("get_metrology_trend failed: %s", exc)
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Tool 8: get_mlops_state  (ground retrain recommendations in evidence)
+# ---------------------------------------------------------------------------
+
+def get_mlops_state() -> dict:
+    """Current model performance + latest drift event + recent retraining jobs.
+
+    Lets recommend_retrain cite real drift evidence instead of guessing.
+    """
+    try:
+        from app.services.mlops import pipeline_state  # noqa: PLC0415
+        state = pipeline_state()
+        models = state.get("models", [])
+        production = next((m for m in models if m.get("stage") == "Production"), None)
+        return {
+            "production_model": production,
+            "model_count": len(models),
+            "latest_drift_event": state.get("latest_drift_event"),
+            "recent_retraining_jobs": (state.get("recent_retraining_jobs") or [])[:3],
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("get_mlops_state failed: %s", exc)
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Tool 9: compare_with_past_wafer  (multimodal map-vs-map comparison)
+# ---------------------------------------------------------------------------
+
+def compare_with_past_wafer(current_image: str, past_image: str, focus: str = "결함 패턴 유사성") -> dict:
+    """Put two wafer maps in front of the multimodal model and compare them.
+
+    `current_image` = this inspection's overlay/ROI; `past_image` = a retrieved
+    case image. Returns a comparison observation.
+    """
+    luxia = _get_luxia_client()
+    if luxia is not None:
+        try:
+            messages = [
+                {
+                    "role": "user",
+                    "content": (
+                        "첫 번째는 현재 웨이퍼, 두 번째는 과거 사례 웨이퍼 이미지입니다. "
+                        f"'{focus}' 관점에서 두 결함 패턴이 얼마나 유사한지, 같은 원인으로 볼 수 있는지 "
+                        "2~4문장으로 비교 분석하세요."
+                    ),
+                }
+            ]
+            result = luxia.chat_with_tools(messages, image_urls=[current_image, past_image])
+            observation = (
+                result.get("content")
+                or result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                or str(result)
+            )
+            return {"observation": observation, "focus": focus}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("compare_with_past_wafer failed: %s — returning stub", exc)
+    return {
+        "observation": (
+            f"[시뮬레이션] {focus} 비교: 두 웨이퍼의 결함 분포를 직접 대조하려면 LUXIA_API_KEY가 필요합니다."
+        ),
+        "focus": focus,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Tool 10: save_case_to_knowledge  (Gap 3 — RAG learning loop)
+# ---------------------------------------------------------------------------
+
+def save_case_to_knowledge(
+    title: str,
+    summary: str,
+    action: str,
+    defect_type: str | None = None,
+    metadata: dict | None = None,
+) -> dict:
+    """Embed an engineer-confirmed case and write it into rag_documents.
+
+    This is what makes the RAG corpus learn from operation: every resolved case
+    becomes retrievable evidence for future search_similar_cases calls.
+    """
+    storage = _get_storage()
+    luxia = _get_luxia_client()
+    if storage is None:
+        return {"ok": False, "error": "storage unavailable"}
+
+    content = f"{title}: {summary} / 조치: {action}"
+    embedding: list[float] | None = None
+    if luxia is not None:
+        try:
+            vecs = luxia.embed([content])
+            embedding = vecs[0] if vecs else None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("save_case_to_knowledge embed failed: %s", exc)
+
+    try:
+        from datetime import datetime, timezone  # noqa: PLC0415
+        doc_id = f"LEARNED-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
+        meta = {"source": "engineer_confirmed", "title": title, "action": action, **(metadata or {})}
+        upsert = getattr(storage, "upsert_rag_document", None)
+        if upsert is None:
+            return {"ok": False, "error": "upsert_rag_document not available"}
+        upsert(doc_id=doc_id, content=content, defect_type=defect_type, embedding=embedding, metadata=meta)
+        return {"ok": True, "doc_id": doc_id, "embedded": embedding is not None, "content": content}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("save_case_to_knowledge write failed: %s", exc)
+        return {"ok": False, "error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
 # Registry + Schemas
 # ---------------------------------------------------------------------------
 
@@ -259,6 +416,11 @@ TOOL_REGISTRY: dict[str, Callable] = {
     "enqueue_for_review": enqueue_for_review,
     "trigger_critical_alert": trigger_critical_alert,
     "recommend_retrain": recommend_retrain,
+    "get_equipment_history": get_equipment_history,
+    "get_metrology_trend": get_metrology_trend,
+    "get_mlops_state": get_mlops_state,
+    "compare_with_past_wafer": compare_with_past_wafer,
+    "save_case_to_knowledge": save_case_to_knowledge,
 }
 
 TOOL_SCHEMAS: list[dict] = [
@@ -365,7 +527,8 @@ TOOL_SCHEMAS: list[dict] = [
             "name": "recommend_retrain",
             "description": (
                 "모델 재학습을 권고한다. "
-                "drift 감지 또는 반복 오판 패턴 발생 시 엔지니어 승인 대기 상태로 재학습 요청을 등록한다."
+                "drift 감지 또는 반복 오판 패턴 발생 시 엔지니어 승인 대기 상태로 재학습 요청을 등록한다. "
+                "권고 전에 가능하면 get_mlops_state로 drift 증거를 먼저 확인한다."
             ),
             "parameters": {
                 "type": "object",
@@ -376,6 +539,100 @@ TOOL_SCHEMAS: list[dict] = [
                     },
                 },
                 "required": ["reason"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_equipment_history",
+            "description": (
+                "같은 설비의 최근 검사 이력과 동일 결함 반복 여부를 DB에서 조회한다. "
+                "'이 설비에서 같은 결함이 최근에도 났는지', '반복성 결함인지' 판단할 때 사용한다. "
+                "예: ETCH-02에서 Scratch가 24시간 내 5회 → 반복성, 설비 점검 우선."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "equipment_id": {"type": "string", "description": "조회할 설비 ID (예: ETCH-02)"},
+                    "defect_type": {"type": "string", "description": "반복 여부를 셀 결함 유형 (선택)"},
+                    "hours": {"type": "number", "description": "조회 기간(시간), 기본 24", "default": 24},
+                },
+                "required": ["equipment_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_metrology_trend",
+            "description": (
+                "특정 설비의 계측값(CD/Overlay/두께/거칠기 등) 시계열 추세를 조회한다. "
+                "이번 건만 튄 건지, 계속 밀리는(drift) 건지 구분할 때 사용한다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "equipment_id": {"type": "string", "description": "조회할 설비 ID"},
+                    "metric": {
+                        "type": "string",
+                        "description": "지표명",
+                        "enum": ["cd_nm", "overlay_nm", "film_thickness_nm", "roughness_nm", "defect_count", "yield_proxy"],
+                        "default": "overlay_nm",
+                    },
+                    "hours": {"type": "number", "description": "조회 기간(시간), 기본 72", "default": 72},
+                },
+                "required": ["equipment_id", "metric"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_mlops_state",
+            "description": (
+                "현재 운영 모델 성능, 최신 drift 이벤트, 최근 재학습 이력을 조회한다. "
+                "재학습을 권고하기 전에 drift 증거를 확인할 때 사용한다."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "compare_with_past_wafer",
+            "description": (
+                "현재 웨이퍼 이미지와 과거 사례 웨이퍼 이미지를 멀티모달로 직접 비교한다. "
+                "두 결함 패턴이 같은 원인으로 볼 수 있는지 시각적으로 대조할 때 사용한다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "current_image": {"type": "string", "description": "현재 검사의 이미지 URL (overlay/ROI)"},
+                    "past_image": {"type": "string", "description": "비교할 과거 사례 이미지 URL"},
+                    "focus": {"type": "string", "description": "비교 집중 항목", "default": "결함 패턴 유사성"},
+                },
+                "required": ["current_image", "past_image"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "save_case_to_knowledge",
+            "description": (
+                "엔지니어가 확인한 결함 대응 사례를 임베딩해 RAG 지식베이스(rag_documents)에 저장한다. "
+                "조치가 검증된 케이스를 기록하면 이후 search_similar_cases에서 검색되어 RAG가 학습된다."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "사례 제목"},
+                    "summary": {"type": "string", "description": "상황 요약"},
+                    "action": {"type": "string", "description": "취한 조치 / 권장 조치"},
+                    "defect_type": {"type": "string", "description": "결함 유형 (선택)"},
+                },
+                "required": ["title", "summary", "action"],
             },
         },
     },
