@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Icon, Panel, Metric, RiskBadge, RiskGauge } from "./lib";
+import { Icon, Panel, Metric, RiskBadge, RiskGauge, Modal } from "./lib";
 import { useStream } from "./SettingsContext";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
@@ -83,36 +83,108 @@ function EvidenceBlock({ source }) {
     <div className="panel-inset" style={{ padding: "9px 11px", marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
         <span className="chip" style={{ fontSize: 8.5, color: "var(--accent)", borderColor: "var(--accent-line)" }}>RAG 유사 사례</span>
-        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)" }}>{c.title}</span>
+        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--text)", flex: 1, minWidth: 0 }}>{c.title}</span>
+        {c.similarity != null && (
+          <span className="mono" style={{ fontSize: 9.5, color: "var(--accent)", fontWeight: 600 }}>유사도 {Math.round(c.similarity * 100)}%</span>
+        )}
       </div>
       <div style={{ fontSize: 11, color: "var(--text-2)", lineHeight: 1.5 }}>{c.summary}</div>
       <div style={{ fontSize: 10.5, color: "var(--text-3)" }}>당시 조치: {c.action}</div>
-      {c.line_context && <div className="mono" style={{ fontSize: 9.5, color: "var(--text-3)" }}>{c.line_context}</div>}
+      <div className="mono" style={{ fontSize: 9.5, color: "var(--text-3)" }}>
+        {[c.case_id, c.equipment, c.date].filter(Boolean).join(" · ")}
+        {c.line_context && (c.case_id || c.equipment || c.date ? " · " : "") + c.line_context}
+      </div>
     </div>
   );
 }
 
-function EvidenceToggle({ source }) {
-  const [open, setOpen] = useState(false);
+function EvidenceTrigger({ source, onOpen }) {
   const tag = source?.type === "metrology" ? "계측 근거" : "RAG 근거";
   return (
-    <div>
-      <button onClick={() => setOpen(o => !o)} className="focusable"
-        style={{
-          display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer",
-          background: "transparent", border: "none", padding: "2px 0",
-          color: open ? "var(--accent)" : "var(--text-3)", font: "inherit", fontSize: 10.5,
-        }}>
-        <Icon name={open ? "chevD" : "chevR"} size={11} />{tag} 보기
-      </button>
-      {open && <EvidenceBlock source={source} />}
-    </div>
+    <button onClick={onOpen} className="focusable"
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 4, cursor: "pointer",
+        background: "transparent", border: "none", padding: "2px 0", alignSelf: "flex-start",
+        color: "var(--text-3)", font: "inherit", fontSize: 10.5,
+      }}>
+      <Icon name="history" size={11} />{tag} 보기
+    </button>
+  );
+}
+
+/* ---------- evidence modal ---------- */
+
+function EvidenceModal({ entry, cases, onClose }) {
+  if (!entry) return null;
+  const isAction = entry.kind === "action";
+  const source = entry.source;
+  const metrology = source?.type === "metrology" ? source : null;
+  // pull the retrieved RAG cases that this recommendation was reasoned from
+  const ragCases = (cases || []).filter(Boolean);
+  const primaryTitle = source?.case?.title;
+
+  const reasoning = isAction
+    ? (metrology
+        ? `이 액션은 계측 룰 위반에서 직접 도출되었습니다. 동일한 신호가 잡혔던 과거 대응 사례를 함께 참고해 다음 조치를 권장합니다.`
+        : `에이전트가 과거 결함 대응 이력에서 유사 상황을 검색했고, 그때 효과가 있었던 조치를 현재 케이스에 맞춰 권장 액션으로 제안했습니다.`)
+    : `에이전트가 과거 결함 대응 이력에서 유사 사례를 검색(RAG)해, 그 패턴·조치 내역을 현재 웨이퍼 상태와 대조했습니다. 그 결과 "${entry.label}"을(를) 가장 가능성 높은 원인으로 ${Math.round((entry.conf ?? 0) * 100)}% 확신도로 추정했습니다.`;
+
+  return (
+    <Modal open onClose={onClose} icon="history"
+      title={isAction ? "권장 액션 근거" : "추정 원인 근거"}
+      right={<span className="chip" style={{ fontSize: 9, color: "var(--accent)", borderColor: "var(--accent-line)" }}>
+        {metrology ? "계측 룰 + RAG" : "RAG 검색 근거"}
+      </span>}>
+      {/* the claim being explained */}
+      <div className="panel-inset" style={{ padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 650, color: "var(--text)", flex: 1, minWidth: 0 }}>{entry.label}</span>
+        {!isAction && entry.conf != null && (
+          <span className="mono" style={{ fontSize: 13, color: "var(--accent)", fontWeight: 600 }}>{Math.round(entry.conf * 100)}%</span>
+        )}
+      </div>
+
+      {/* reasoning narrative */}
+      <div style={{ fontSize: 12, color: "var(--text-2)", lineHeight: 1.7, margin: "12px 2px 6px" }}>
+        {reasoning}
+      </div>
+
+      {/* metrology rule (only for rule-derived actions) */}
+      {metrology && <EvidenceBlock source={metrology} />}
+
+      {/* the past RAG cases that grounded the reasoning */}
+      <div className="label-cap" style={{ margin: "16px 0 6px" }}>
+        근거가 된 과거 사례 · RAG Top-{ragCases.length || 0}
+      </div>
+      {ragCases.length === 0 && (
+        <div className="panel-inset" style={{ padding: "9px 11px", fontSize: 11, color: "var(--text-3)" }}>
+          연결된 과거 RAG 사례가 없습니다.
+        </div>
+      )}
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {ragCases.map((c, i) => {
+          const isPrimary = primaryTitle && c.title === primaryTitle;
+          return (
+            <div key={i} style={{ position: "relative" }}>
+              {isPrimary && (
+                <span className="chip" style={{
+                  position: "absolute", top: -7, right: 8, zIndex: 1, fontSize: 8,
+                  color: "var(--accent)", borderColor: "var(--accent-line)", background: "var(--panel)",
+                }}>주요 매칭</span>
+              )}
+              <div style={{ outline: isPrimary ? "1px solid var(--accent-line)" : "none", borderRadius: 8 }}>
+                <EvidenceBlock source={{ type: "rag", case: c }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
   );
 }
 
 /* ---------- AI recommendation ---------- */
 
-function CauseCard({ idx, cause }) {
+function CauseCard({ idx, cause, onEvidence }) {
   return (
     <div className="panel-inset" style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
@@ -126,12 +198,12 @@ function CauseCard({ idx, cause }) {
       <div style={{ height: 4, background: "var(--panel-2)", borderRadius: 99, overflow: "hidden" }}>
         <div style={{ width: `${cause.conf * 100}%`, height: "100%", background: "var(--accent)", opacity: .7, borderRadius: 99 }} />
       </div>
-      <EvidenceToggle source={cause.source} />
+      <EvidenceTrigger source={cause.source} onOpen={() => onEvidence({ kind: "cause", label: cause.label, conf: cause.conf, source: cause.source })} />
     </div>
   );
 }
 
-function ActionRow({ idx, action, onExecute, disabled, busy }) {
+function ActionRow({ idx, action, onExecute, onEvidence, disabled, busy }) {
   return (
     <div className="panel-inset" style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
@@ -143,7 +215,7 @@ function ActionRow({ idx, action, onExecute, disabled, busy }) {
           <Icon name="play" size={11} />실행
         </button>
       </div>
-      <EvidenceToggle source={action.source} />
+      <EvidenceTrigger source={action.source} onOpen={() => onEvidence({ kind: "action", label: action.label, source: action.source })} />
     </div>
   );
 }
@@ -254,6 +326,7 @@ export default function AgentView({ focusId, onFocusHandled }) {
   const [trace, setTrace] = useState(null);
   const [traceLoading, setTraceLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [evidence, setEvidence] = useState(null);
 
   // picking a case collapses the left list; the collapsed bar re-expands it
   function selectRow(id) {
@@ -289,6 +362,7 @@ export default function AgentView({ focusId, onFocusHandled }) {
   // land a few seconds later — poll until it appears (or give up quietly)
   useEffect(() => {
     setTrace(null);
+    setEvidence(null);
     if (!selectedId) return;
     let cancelled = false;
     let attempts = 0;
@@ -468,14 +542,14 @@ export default function AgentView({ focusId, onFocusHandled }) {
                   <div>
                     <div className="label-cap" style={{ marginBottom: 8 }}>추정 원인 · Probable Causes</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                      {causes.map((c, i) => <CauseCard key={i} idx={i} cause={c} />)}
+                      {causes.map((c, i) => <CauseCard key={i} idx={i} cause={c} onEvidence={setEvidence} />)}
                     </div>
                   </div>
                   <div>
                     <div className="label-cap" style={{ marginBottom: 8 }}>권장 액션 · Next Actions</div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {actions.map((a, i) => (
-                        <ActionRow key={i} idx={i} action={a} onExecute={executeAction} disabled={decided} busy={busy} />
+                        <ActionRow key={i} idx={i} action={a} onExecute={executeAction} onEvidence={setEvidence} disabled={decided} busy={busy} />
                       ))}
                       {decided && (
                         <span style={{ fontSize: 10.5, color: "var(--text-3)" }}>
@@ -491,6 +565,8 @@ export default function AgentView({ focusId, onFocusHandled }) {
               </Panel>
       </div>
       )}
+
+      {evidence && <EvidenceModal entry={evidence} cases={cases} onClose={() => setEvidence(null)} />}
     </div>
   );
 }

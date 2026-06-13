@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 // ── Icon ─────────────────────────────────────────────────────────────────────
 const PATHS = {
@@ -174,4 +174,48 @@ export function useWidth() {
 export function ChartFrame({ children, height = 150 }) {
   const [ref, w] = useWidth();
   return <div ref={ref} style={{ width: "100%" }}>{w > 0 && children(w, height)}</div>;
+}
+
+// ── Modal ─────────────────────────────────────────────────────────────────────
+export function Modal({ open, onClose, title, icon, right, children, width = 560 }) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = e => { if (e.key === "Escape") onClose && onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+  if (!open) return null;
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, zIndex: 1000,
+        background: "rgba(4, 10, 20, .58)", backdropFilter: "blur(2px)",
+        display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+      }}>
+      <div
+        onClick={e => e.stopPropagation()}
+        className="panel fade-in"
+        style={{
+          width: "100%", maxWidth: width, maxHeight: "86vh", display: "flex", flexDirection: "column",
+          boxShadow: "0 18px 60px rgba(0,0,0,.5)",
+        }}>
+        <header style={{
+          display: "flex", alignItems: "center", gap: 9,
+          padding: "12px 14px", borderBottom: "1px solid var(--border)",
+        }}>
+          {icon && <span style={{ color: "var(--accent)", display: "flex" }}><Icon name={icon} size={16} /></span>}
+          {title && <h3 style={{ margin: 0, fontSize: 13.5, fontWeight: 650, letterSpacing: "-.01em", color: "var(--text)" }}>{title}</h3>}
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+            {right}
+            <button onClick={onClose} className="focusable" title="닫기"
+              style={{ display: "flex", background: "transparent", border: "none", cursor: "pointer", color: "var(--text-3)", padding: 2 }}>
+              <Icon name="x" size={16} />
+            </button>
+          </div>
+        </header>
+        <div style={{ padding: 16, overflowY: "auto" }}>{children}</div>
+      </div>
+    </div>
+  );
 }

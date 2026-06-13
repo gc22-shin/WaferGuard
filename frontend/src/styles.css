@@ -3,7 +3,6 @@
    "NASA mission control + Linear density + fab calm"
    ============================================================ */
 
-:root,
 [data-theme="dark"] {
   --bg:          #090D14;
   --bg-grid:     rgba(255,255,255,0.018);
@@ -37,6 +36,7 @@
   color-scheme: dark;
 }
 
+:root,
 [data-theme="light"] {
   --bg:          #EAEEF3;
   --bg-grid:     rgba(15,30,50,0.022);

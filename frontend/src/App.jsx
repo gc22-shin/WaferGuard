@@ -113,7 +113,7 @@ function Sidebar({ active, setActive }) {
 }
 
 function AppInner() {
-  const [theme, setTheme]   = useState("dark");
+  const [theme, setTheme]   = useState("light");
   const [active, setActive] = useState("inspect");
   const [toast, setToast]   = useState(null);
   const [agentFocus, setAgentFocus] = useState(null);
