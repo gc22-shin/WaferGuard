@@ -5,7 +5,7 @@ import { DefectCatBars, RiskHistogram } from "./charts";
 import { riskHist, defectCats, defaultInspection } from "./mock";
 import { useStream } from "./SettingsContext";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 // Map backend result → display format (shared with AgentView)
 export function mapResult(r) {

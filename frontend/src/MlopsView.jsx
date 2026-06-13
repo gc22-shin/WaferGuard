@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Icon, Panel, Metric, StatusDot, Modal, ChartFrame } from "./lib";
 import { useStream } from "./SettingsContext";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 const DRIFT_INTENSITY = [
   { id: "normal", label: "정상" },

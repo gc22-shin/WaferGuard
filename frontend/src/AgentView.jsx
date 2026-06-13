@@ -3,7 +3,7 @@ import { Icon, Panel, Metric, RiskBadge, RiskGauge, Modal, Markdown, ToolCalls, 
 import { useStream } from "./SettingsContext";
 import { useDefectChat } from "./DefectChatContext";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 const MODE_CHIP = {
   llm:       { color: "var(--accent)", label: "LLM (GPT-4o-mini)" },

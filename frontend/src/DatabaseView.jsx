@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import { Icon, Panel } from "./lib";
 import RagView from "./RagView";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 const TABLE_LABELS = {
   inspections:       "검사 이력",
