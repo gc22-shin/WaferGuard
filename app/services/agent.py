@@ -46,6 +46,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Iterator
 from typing import Any, TypedDict
 
 from app.services import luxia_client
@@ -230,6 +231,7 @@ class AgentState(TypedDict):
     image_urls: list[str]
     max_iterations: int
     iteration: int
+    tool_schemas: list[dict]  # which tools this profile exposes (inspection vs mlops)
 
 
 # ---------------------------------------------------------------------------
@@ -345,7 +347,7 @@ def _node_decide(state: AgentState) -> AgentState:
     """Call LLM with current messages and available tools."""
     resp = luxia_client.chat_with_tools(
         messages=state["messages"],
-        tools=_TOOL_SCHEMAS,
+        tools=state.get("tool_schemas") or _TOOL_SCHEMAS,
         image_urls=state["image_urls"] if state["iteration"] == 0 else None,
     )
     msg = resp["choices"][0]["message"]
@@ -526,39 +528,54 @@ def run(evidence: dict) -> dict:
         "image_urls": image_urls,
         "max_iterations": 5,
         "iteration": 0,
+        "tool_schemas": _TOOL_SCHEMAS,
     }
 
-    # Determine agent mode — the request can force rule-based fallback via use_llm=False
     use_llm = bool(evidence.get("use_llm", True))
-    agent_mode = "llm" if use_llm and os.environ.get("LUXIA_API_KEY", "").strip() else "stub"
 
-    if agent_mode == "llm":
-        try:
-            graph = _get_graph()
-            if graph is not None:
-                final_state = graph.invoke(initial_state)
-            else:
-                final_state = _run_sequential(initial_state)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("Agent graph execution failed: %s", exc)
-            final_state = _node_final_action(initial_state)
-    else:
-        # Fast rule-based fallback: no LLM round-trips, summarise evidence directly.
+    def _rule_fallback() -> str:
         rag_cases = evidence.get("rag_cases") or []
         first_action = (
             rag_cases[0].get("action") if rag_cases and isinstance(rag_cases[0], dict) else None
         ) or "엔지니어 검토 큐에서 수동 확인"
-        final_state = dict(initial_state)
-        final_state["final_action"] = (
+        return (
             f"[룰 기반 판단 — LLM 미사용] {evidence.get('defect_type', '결함')} 패턴, "
             f"위험도 {evidence.get('risk_level', '?')} "
             f"(score {evidence.get('risk_score', 0):.2f}, 신뢰도 {evidence.get('confidence', 0):.1%}).\n"
             f"권장 우선 조치: {first_action}."
         )
 
-    # Persist trace
+    return _drive_and_persist(initial_state, use_llm, _rule_fallback, agent_kind="inspection")
+
+
+# ---------------------------------------------------------------------------
+# Shared driver — runs the loop (graph or sequential) and persists the trace.
+# ---------------------------------------------------------------------------
+
+
+def _drive_and_persist(
+    initial_state: AgentState,
+    use_llm: bool,
+    rule_fallback,
+    agent_kind: str = "inspection",
+) -> dict:
+    agent_mode = "llm" if use_llm and os.environ.get("LUXIA_API_KEY", "").strip() else "stub"
+
+    if agent_mode == "llm":
+        try:
+            graph = _get_graph()
+            final_state = graph.invoke(initial_state) if graph is not None else _run_sequential(initial_state)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Agent graph execution failed: %s", exc)
+            final_state = _node_final_action(initial_state)
+    else:
+        final_state = dict(initial_state)
+        final_state["final_action"] = rule_fallback()
+
+    inspection_id = initial_state["inspection_id"]
     trace = {
         "inspection_id": inspection_id,
+        "agent_kind": agent_kind,
         "messages": final_state["messages"],
         "tool_calls": final_state["tool_calls_log"],
         "final_action": final_state["final_action"],
@@ -575,4 +592,255 @@ def run(evidence: dict) -> dict:
         "tool_calls": final_state["tool_calls_log"],
         "trace_id": trace_id,
         "agent_mode": agent_mode,
+        "agent_kind": agent_kind,
     }
+
+
+# ===========================================================================
+# MLOps Agent — fleet/model-lifecycle profile (distinct from the per-wafer
+# inspection agent above). Shares the loop + lookup tools, differs in system
+# prompt and allowed write-tool (recommend_retrain, approval-gated).
+# ===========================================================================
+
+_MLOPS_TOOL_NAMES = {
+    "get_mlops_state",
+    "get_metrology_trend",
+    "get_equipment_history",
+    "recommend_retrain",
+}
+
+
+def _mlops_tool_schemas() -> list[dict]:
+    try:
+        from app.services.tools import TOOL_SCHEMAS as _TS  # noqa: PLC0415
+
+        return [s for s in _TS if s.get("function", {}).get("name") in _MLOPS_TOOL_NAMES]
+    except ImportError:
+        return [s for s in _TOOL_SCHEMAS if s.get("function", {}).get("name") in _MLOPS_TOOL_NAMES]
+
+
+_MLOPS_SYSTEM_PROMPT = """당신은 WaferGuard MLOps 에이전트입니다.
+개별 웨이퍼가 아니라 라인 전체의 모델 성능과 입력 분포 드리프트를 모니터링하고, 재학습 필요 여부를 판단합니다.
+
+규칙:
+1. 먼저 get_mlops_state로 현재 운영 모델 성능(F1), 최신 drift 이벤트, 최근 재학습 이력을 확인합니다.
+2. 입력 분포가 실제로 밀리는지 보려면 get_metrology_trend(equipment_id, metric)로 주요 설비 계측 추세를 확인합니다.
+3. 결함 구성이 바뀌었는지 보려면 get_equipment_history(equipment_id)로 결함 분포를 확인합니다.
+4. drift score가 임계치를 넘고 + 성능 저하/입력 분포 변화 근거가 모이면 recommend_retrain(reason)으로 재학습을 권고합니다.
+   recommend_retrain은 사람 승인 대기(pending_approvals)로 등록되며, 반드시 수치 근거를 reason에 명시합니다.
+5. 근거가 부족하면 재학습을 권고하지 말고 "현 상태 유지 + 모니터링 지속"으로 판단합니다.
+6. 최종 판단은 한국어로 간결하게, drift score·F1·추세 수치를 인용해 작성합니다.
+7. 수치를 지어내지 않습니다. 도구로 조회한 값만 사용합니다."""
+
+
+def _build_mlops_evidence(line_id: str) -> str:
+    lines = [f"## 대상 라인: {line_id}"]
+    try:
+        from app.services.mlops import pipeline_state  # noqa: PLC0415
+
+        state = pipeline_state()
+        models = state.get("models", [])
+        prod = next((m for m in models if m.get("stage") == "Production"), None)
+        if prod:
+            lines.append(f"## 운영 모델: {prod.get('version')} (F1 {prod.get('f1_score')}, p95 {prod.get('latency_p95_ms')}ms)")
+        de = state.get("latest_drift_event") or {}
+        if de:
+            lines.append(f"## 최신 drift: score {de.get('drift_score')} / {de.get('status')} / {de.get('action_taken')}")
+        jobs = state.get("recent_retraining_jobs") or []
+        if jobs:
+            lines.append("## 최근 재학습:")
+            for j in jobs[:3]:
+                lines.append(f"  - {j.get('candidate_version')} F1 {j.get('f1_score')} ({j.get('trigger_type')})")
+    except Exception as exc:  # noqa: BLE001
+        lines.append(f"## (운영 상태 조회 실패: {exc})")
+
+    # surface a few high-volume equipment ids so the agent can query trends
+    try:
+        from app.services.storage import list_inspections  # noqa: PLC0415
+
+        equips: list[str] = []
+        for r in list_inspections(limit=60):
+            eid = r.get("equipment_id")
+            if eid and eid not in equips:
+                equips.append(str(eid))
+            if len(equips) >= 5:
+                break
+        if equips:
+            lines.append("## 주요 설비(추세 조회용): " + ", ".join(equips))
+    except Exception:  # noqa: BLE001
+        pass
+
+    return "\n".join(lines)
+
+
+def run_mlops_agent(line_id: str = "ALL", use_llm: bool = True) -> dict:
+    """Run the MLOps agent over current fleet/model state.
+
+    Returns the same shape as ``run`` (final_action, tool_calls, trace_id,
+    agent_mode, agent_kind). Trace is persisted under a synthetic id.
+    """
+    evidence_text = _build_mlops_evidence(line_id)
+    trace_key = f"MLOPS-{line_id}"
+
+    initial_state: AgentState = {
+        "inspection_id": trace_key,
+        "messages": [
+            {"role": "system", "content": _MLOPS_SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    "다음 운영 상태를 분석하고 모델 재학습 필요 여부를 판단하세요. "
+                    "필요하면 도구로 추세를 직접 조회한 뒤 결론을 내리세요.\n\n" + evidence_text
+                ),
+            },
+        ],
+        "tool_calls_log": [],
+        "final_action": "",
+        "image_urls": [],
+        "max_iterations": 5,
+        "iteration": 0,
+        "tool_schemas": _mlops_tool_schemas(),
+    }
+
+    def _rule_fallback() -> str:
+        return (
+            "[룰 기반 판단 — LLM 미사용] 현재 운영 상태 요약만 제공합니다. "
+            "drift 임계치 초과 시 재학습 권고가 필요하나, 자동 판단에는 LLM이 필요합니다.\n"
+            + evidence_text
+        )
+
+    return _drive_and_persist(initial_state, use_llm, _rule_fallback, agent_kind="mlops")
+
+
+# ---------------------------------------------------------------------------
+# MLOps agent — streaming variant (tool_call / tool_result / token / done)
+# ---------------------------------------------------------------------------
+
+_MLOPS_STREAM_MAX_ITERATIONS = 5
+_CHUNK_SIZE = 3
+
+
+def _chunk_text(text: str, size: int = _CHUNK_SIZE) -> Iterator[str]:
+    for i in range(0, len(text), size):
+        yield text[i : i + size]
+
+
+def _summarize_mlops_tool(name: str, result: object) -> str:
+    if not isinstance(result, dict):
+        return str(result)[:80] if result is not None else ""
+    if result.get("error"):
+        return f"오류: {result['error']}"
+    if name == "get_mlops_state":
+        pm = result.get("production_model") or {}
+        de = result.get("latest_drift_event") or {}
+        return f"운영모델 F1 {pm.get('f1_score', '?')} · drift {de.get('drift_score', '?')} ({de.get('status', '?')})"
+    if name == "get_metrology_trend":
+        return f"{result.get('metric')} {result.get('trend')} · Δ{result.get('delta')} ({result.get('pct_change')}%, n={result.get('n')})"
+    if name == "get_equipment_history":
+        rec = " · 반복성" if result.get("is_recurring") else ""
+        return f"{result.get('equipment_id')} {result.get('window_hours')}h: 검사 {result.get('total_inspections')}건{rec}"
+    if name == "recommend_retrain":
+        return f"재학습 승인 대기 등록 ({result.get('approval_id', 'pending')})"
+    return "완료"
+
+
+def stream_mlops_agent(line_id: str = "ALL", use_llm: bool = True) -> Iterator[dict]:
+    """Streaming MLOps agent: yields SSE-friendly events as it reasons.
+
+    Event types: tool_call / tool_result / token / done — same contract the
+    inspection chat uses, so the frontend can reuse its stream handler.
+    """
+    evidence_text = _build_mlops_evidence(line_id)
+    trace_key = f"MLOPS-{line_id}"
+    has_key = bool(os.environ.get("LUXIA_API_KEY", "").strip())
+
+    if not use_llm or not has_key:
+        msg = (
+            "[룰 기반 판단 — LLM 미사용] 현재 운영 상태 요약만 제공합니다. "
+            "자동 재학습 판단에는 LLM이 필요합니다.\n" + evidence_text
+        )
+        for chunk in _chunk_text(msg):
+            yield {"type": "token", "text": chunk}
+        yield {"type": "done", "final_action": msg, "agent_mode": "stub", "tool_calls": [], "agent_kind": "mlops"}
+        return
+
+    messages: list[dict] = [
+        {"role": "system", "content": _MLOPS_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                "다음 운영 상태를 분석하고 모델 재학습 필요 여부를 판단하세요. "
+                "필요하면 도구로 추세를 직접 조회한 뒤 결론을 내리세요.\n\n" + evidence_text
+            ),
+        },
+    ]
+    schemas = _mlops_tool_schemas()
+    registry = _get_tool_registry()
+    tool_calls_log: list[dict] = []
+
+    for iteration in range(_MLOPS_STREAM_MAX_ITERATIONS):
+        last_turn = iteration == _MLOPS_STREAM_MAX_ITERATIONS - 1
+        resp = luxia_client.chat_with_tools(messages, tools=None if last_turn else schemas)
+        msg = resp.get("choices", [{}])[0].get("message", {}) or {}
+        tool_calls = msg.get("tool_calls") if not last_turn else None
+
+        if tool_calls:
+            messages.append(msg)
+            for tc in tool_calls:
+                fn = tc.get("function", {})
+                name = fn.get("name", "")
+                try:
+                    args = json.loads(fn.get("arguments", "{}"))
+                except json.JSONDecodeError:
+                    args = {}
+                yield {"type": "tool_call", "name": name, "args": args}
+
+                tool_fn = registry.get(name)
+                if tool_fn is None:
+                    result: object = {"error": f"unknown tool: {name}"}
+                else:
+                    try:
+                        result = tool_fn(**args)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("mlops agent tool %s failed: %s", name, exc)
+                        result = {"error": str(exc)}
+
+                tool_calls_log.append({"name": name, "args": args, "result": result})
+                yield {"type": "tool_result", "name": name, "summary": _summarize_mlops_tool(name, result)}
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tc.get("id", name),
+                        "name": name,
+                        "content": json.dumps(result, ensure_ascii=False),
+                    }
+                )
+            continue
+
+        content = msg.get("content") or "판단 결과를 생성하지 못했습니다."
+        for chunk in _chunk_text(content):
+            yield {"type": "token", "text": chunk}
+
+        trace = {
+            "inspection_id": trace_key,
+            "agent_kind": "mlops",
+            "messages": messages + [{"role": "assistant", "content": content}],
+            "tool_calls": tool_calls_log,
+            "final_action": content,
+            "agent_mode": "llm",
+        }
+        try:
+            trace_id = insert_agent_trace(trace_key, trace)
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to persist mlops agent trace: %s", exc)
+            trace_id = "trace-error"
+
+        yield {
+            "type": "done",
+            "final_action": content,
+            "agent_mode": "llm",
+            "tool_calls": tool_calls_log,
+            "trace_id": trace_id,
+            "agent_kind": "mlops",
+        }
+        return

@@ -130,6 +130,11 @@ def main() -> None:
     state = client.get("/api/v1/mlops/state")
     assert state.status_code == 200, state.text
 
+    # MLOps agent (rule-based fallback to avoid an LLM round-trip in the smoke test)
+    mlops_agent = client.post("/api/v1/mlops/agent/run", json={"line_id": "LINE-7", "use_llm": False})
+    assert mlops_agent.status_code == 200, mlops_agent.text
+    assert mlops_agent.json().get("agent_kind") == "mlops"
+
     copilot = client.get("/api/v1/copilot/ops?line_id=LINE-7")
     assert copilot.status_code == 200, copilot.text
     assert copilot.json()["action_recommendations"]
@@ -163,6 +168,7 @@ def main() -> None:
             "pending_approvals": len(approvals.json()),
             "copilot_actions": len(copilot.json()["action_recommendations"]),
             "models": len(state.json()["models"]),
+            "mlops_agent": mlops_agent.json().get("agent_kind"),
             "db_tables": len(db_overview.json()["tables"]),
         }
     )

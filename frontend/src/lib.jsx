@@ -176,6 +176,117 @@ export function ChartFrame({ children, height = 150 }) {
   return <div ref={ref} style={{ width: "100%" }}>{w > 0 && children(w, height)}</div>;
 }
 
+// ── Markdown (lightweight renderer for LLM chat/agent output) ───────────────────
+function mdInline(text, kp) {
+  const nodes = [];
+  let rest = String(text);
+  let k = 0;
+  const re = /\*\*(.+?)\*\*|\*(.+?)\*|`(.+?)`/;
+  for (;;) {
+    const m = re.exec(rest);
+    if (!m) { if (rest) nodes.push(rest); break; }
+    if (m.index > 0) nodes.push(rest.slice(0, m.index));
+    if (m[1] != null) nodes.push(<strong key={`${kp}-b${k++}`}>{m[1]}</strong>);
+    else if (m[2] != null) nodes.push(<em key={`${kp}-i${k++}`}>{m[2]}</em>);
+    else nodes.push(<code key={`${kp}-c${k++}`} className="md-code">{m[3]}</code>);
+    rest = rest.slice(m.index + m[0].length);
+  }
+  return nodes;
+}
+
+export function Markdown({ text, style }) {
+  const lines = String(text || "").split("\n");
+  const blocks = [];
+  let i = 0;
+  let key = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const h = /^(#{1,3})\s+(.*)$/.exec(line);
+    if (h) {
+      const lvl = h[1].length;
+      blocks.push(
+        <div key={key++} style={{ fontSize: lvl === 1 ? 14.5 : lvl === 2 ? 13.5 : 12.5, fontWeight: 700, margin: "8px 0 4px", color: "var(--text)" }}>
+          {mdInline(h[2], `h${key}`)}
+        </div>
+      );
+      i++; continue;
+    }
+    if (/^\s*[-*]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*[-*]\s+/, "")); i++;
+      }
+      blocks.push(
+        <ul key={key++} className="md-list" style={{ margin: "4px 0", paddingLeft: 18 }}>
+          {items.map((it, j) => <li key={j} style={{ margin: "2px 0" }}>{mdInline(it, `ul${key}-${j}`)}</li>)}
+        </ul>
+      );
+      continue;
+    }
+    if (/^\s*\d+\.\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+        items.push(lines[i].replace(/^\s*\d+\.\s+/, "")); i++;
+      }
+      blocks.push(
+        <ol key={key++} className="md-list" style={{ margin: "4px 0", paddingLeft: 20 }}>
+          {items.map((it, j) => <li key={j} style={{ margin: "2px 0" }}>{mdInline(it, `ol${key}-${j}`)}</li>)}
+        </ol>
+      );
+      continue;
+    }
+    if (line.trim() === "") { i++; continue; }
+    // paragraph: gather consecutive non-empty, non-block lines
+    const para = [];
+    while (i < lines.length && lines[i].trim() !== ""
+      && !/^(#{1,3})\s+/.test(lines[i]) && !/^\s*[-*]\s+/.test(lines[i]) && !/^\s*\d+\.\s+/.test(lines[i])) {
+      para.push(lines[i]); i++;
+    }
+    blocks.push(
+      <p key={key++} style={{ margin: "3px 0", lineHeight: 1.65 }}>
+        {para.map((p, j) => <React.Fragment key={j}>{j > 0 && <br />}{mdInline(p, `p${key}-${j}`)}</React.Fragment>)}
+      </p>
+    );
+  }
+  return <div className="md-body" style={style}>{blocks}</div>;
+}
+
+// ── SubTabs (segmented control inside a top-level tab) ──────────────────────────
+export function SubTabs({ tabs, active, onChange }) {
+  return (
+    <div style={{
+      display: "inline-flex", gap: 3, padding: 3, marginBottom: 14,
+      background: "var(--panel-2)", border: "1px solid var(--border-soft)", borderRadius: 9,
+    }}>
+      {tabs.map(t => {
+        const on = t.id === active;
+        return (
+          <button key={t.id} onClick={() => onChange(t.id)} className="focusable"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 7, cursor: "pointer",
+              padding: "6px 13px", borderRadius: 7, border: "1px solid transparent", font: "inherit",
+              fontSize: 12.5, fontWeight: on ? 650 : 500,
+              background: on ? "var(--panel)" : "transparent",
+              color: on ? "var(--accent)" : "var(--text-2)",
+              boxShadow: on ? "var(--shadow)" : "none",
+              transition: "background .15s, color .15s",
+            }}>
+            {t.icon && <Icon name={t.icon} size={14} />}
+            {t.label}
+            {t.en && <span className="mono" style={{ fontSize: 9.5, color: "var(--text-3)", fontWeight: 400 }}>{t.en}</span>}
+            {t.badge != null && (
+              <span className="mono" style={{
+                fontSize: 9.5, fontWeight: 700, padding: "0 5px", borderRadius: 99,
+                color: "var(--accent)", background: "var(--accent-dim)",
+              }}>{t.badge}</span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Modal ─────────────────────────────────────────────────────────────────────
 export function Modal({ open, onClose, title, icon, right, children, width = 560 }) {
   useEffect(() => {

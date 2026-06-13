@@ -25,6 +25,7 @@ from app.services.schemas import (
     HandoffReportRequest,
     InspectRequest,
     InspectionChatRequest,
+    MlopsAgentRequest,
     PromoteRequest,
     RetrainRequest,
     ReviewRequest,
@@ -263,6 +264,39 @@ def ops_copilot(line_id: str = "ALL") -> dict[str, object]:
 @app.get("/api/v1/mlops/state")
 def mlops_state() -> dict[str, object]:
     return pipeline_state()
+
+
+@app.post("/api/v1/mlops/agent/run")
+def mlops_agent_run(request: MlopsAgentRequest) -> dict[str, object]:
+    """Run the fleet-level MLOps agent: it inspects model performance + drift via
+    tools and decides whether to recommend retraining (approval-gated)."""
+    try:
+        from app.services.agent import run_mlops_agent  # noqa: PLC0415
+
+        return run_mlops_agent(line_id=request.line_id, use_llm=request.use_llm)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"MLOps agent run failed: {exc}") from exc
+
+
+@app.post("/api/v1/mlops/agent/run/stream")
+def mlops_agent_run_stream(request: MlopsAgentRequest) -> StreamingResponse:
+    """Streaming MLOps agent run — emits tool_call / tool_result / token / done
+    as Server-Sent Events so the UI shows the agent's reasoning live."""
+    from app.services.agent import stream_mlops_agent  # noqa: PLC0415
+
+    def event_source():
+        try:
+            for event in stream_mlops_agent(line_id=request.line_id, use_llm=request.use_llm):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            err = {"type": "done", "final_action": f"오류: 분석 실행 실패 ({exc})", "agent_mode": "error", "tool_calls": []}
+            yield f"data: {json.dumps(err, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_source(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/api/v1/mlops/drift")

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Icon, Panel, Metric, RiskBadge, RiskGauge, Modal } from "./lib";
+import { Icon, Panel, Metric, RiskBadge, RiskGauge, Modal, Markdown } from "./lib";
 import { useStream } from "./SettingsContext";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
@@ -363,15 +363,18 @@ function DefectChat({ inspectionId, llmOn }) {
               background: isUser ? "var(--accent-dim)" : "var(--panel-2)",
               border: `1px solid ${isUser ? "var(--accent-line)" : "var(--border-soft)"}`,
               borderRadius: 10, padding: "8px 11px",
-              fontSize: 12, lineHeight: 1.6, color: "var(--text)", whiteSpace: "pre-wrap",
+              fontSize: 12, lineHeight: 1.6, color: "var(--text)",
+              whiteSpace: isUser ? "pre-wrap" : "normal",
             }}>
               {hasTools && m.tools.map((t, ti) => <ToolActivity key={ti} tool={t} />)}
               {thinking ? (
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--text-3)" }}>
                   <Icon name="refresh" size={12} style={{ animation: "spin 1s linear infinite" }} />분석 중…
                 </span>
+              ) : isUser ? (
+                m.content
               ) : (
-                <>{m.content}{showCursor && <span className="blink-cursor">▍</span>}</>
+                <>{m.content && <Markdown text={m.content} />}{showCursor && <span className="blink-cursor">▍</span>}</>
               )}
             </div>
           );

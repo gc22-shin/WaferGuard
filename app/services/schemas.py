@@ -71,6 +71,11 @@ class RetrainRequest(BaseModel):
     trigger_type: Literal["scheduled", "drift", "performance", "manual"] = "manual"
 
 
+class MlopsAgentRequest(BaseModel):
+    line_id: str = Field(default="ALL", min_length=2, max_length=64)
+    use_llm: bool = True
+
+
 class PromoteRequest(BaseModel):
     version: str | None = None
 

@@ -240,7 +240,10 @@ def recommend_retrain(reason: str) -> dict:
             insert_pending_approval = getattr(storage, "insert_pending_approval", None)
             if insert_pending_approval is not None:
                 approval_id = insert_pending_approval(
-                    inspection_id=None,
+                    # fleet-level recommendation has no single inspection; the
+                    # pending_approvals.inspection_id column is NOT NULL, so use a
+                    # sentinel rather than None (which silently failed the insert).
+                    inspection_id="FLEET",
                     tool_name="recommend_retrain",
                     payload={"reason": reason},
                     reason=reason,

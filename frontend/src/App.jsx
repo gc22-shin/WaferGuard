@@ -1,18 +1,16 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Icon, RiskBadge, StatusDot } from "./lib";
 
-import InspectionView  from "./InspectionView";
-import AgentView       from "./AgentView";
-import MlopsView       from "./MlopsView";
+import InspectionWorkspace from "./InspectionWorkspace";
+import MlopsWorkspace      from "./MlopsWorkspace";
 import DatabaseView    from "./DatabaseView";
 import AlertCenterView from "./AlertCenterView";
 import SettingsView    from "./SettingsView";
 import { SettingsProvider, useStream } from "./SettingsContext";
 
 const NAV = [
-  { id: "inspect", icon: "layers",  label: "실시간 검사",    en: "Live Inspection", View: InspectionView },
-  { id: "mlops",   icon: "box",     label: "MLOps 콘솔",    en: "MLOps",           View: MlopsView },
-  { id: "agent",   icon: "bot",     label: "에이전트 분석",  en: "Agent",           View: AgentView },
+  { id: "inspect", icon: "layers",  label: "실시간 검사",    en: "Live Inspection", View: InspectionWorkspace },
+  { id: "mlops",   icon: "box",     label: "MLOps 콘솔",    en: "MLOps",           View: MlopsWorkspace },
   { id: "data",    icon: "history", label: "데이터 관리",    en: "Data & RAG",      View: DatabaseView },
   { id: "alert",   icon: "radio",   label: "Alert Center", en: "Alerts",          View: AlertCenterView, badge: 1 },
   { id: "settings",icon: "cpu",     label: "설정",          en: "Settings",        View: SettingsView },
@@ -61,7 +59,7 @@ function AgentToast({ data, onGo, onClose }) {
             style={{ marginLeft: "auto", padding: "3px 6px" }}><Icon name="x" size={13} /></button>
         </div>
         <div style={{ fontSize: 11.5, color: "var(--text-2)", lineHeight: 1.5 }}>
-          AI 분석이 진행 중입니다. 에이전트 분석 탭에서 추정 원인과 권장 액션을 확인하세요.
+          AI 분석이 진행 중입니다. 실시간 검사 → 검사 에이전트에서 추정 원인과 권장 액션을 확인하세요.
         </div>
         <button className="btn btn-accent" onClick={onGo} style={{ alignSelf: "flex-start", padding: "5px 12px", fontSize: 11.5 }}>
           <Icon name="bot" size={13} />분석 보러 가기
@@ -128,7 +126,7 @@ function AppInner() {
   // transient nudge toward the Agent tab when a Medium/High inspection lands
   useEffect(() => {
     if (!latest || tick === lastToastTick.current) return;
-    if ((latest.risk_level === "High" || latest.risk_level === "Medium") && active !== "agent") {
+    if ((latest.risk_level === "High" || latest.risk_level === "Medium") && active !== "inspect") {
       lastToastTick.current = tick;
       setToast({ id: latest.id, level: latest.risk_level, wafer: latest.wafer_id || "W?", defect: latest.defect_type || "결함" });
       clearTimeout(toastTimer.current);
@@ -144,7 +142,7 @@ function AppInner() {
       {toast && (
         <AgentToast
           data={toast}
-          onGo={() => { setAgentFocus(toast.id); setActive("agent"); setToast(null); }}
+          onGo={() => { setAgentFocus(toast.id); setActive("inspect"); setToast(null); }}
           onClose={() => setToast(null)}
         />
       )}
@@ -189,8 +187,8 @@ function AppInner() {
           </div>
 
           <div key={active} className="fade-in">
-            <View focusId={cur.id === "agent" ? agentFocus : undefined}
-              onFocusHandled={cur.id === "agent" ? () => setAgentFocus(null) : undefined} />
+            <View focusId={cur.id === "inspect" ? agentFocus : undefined}
+              onFocusHandled={cur.id === "inspect" ? () => setAgentFocus(null) : undefined} />
           </div>
         </main>
       </div>
