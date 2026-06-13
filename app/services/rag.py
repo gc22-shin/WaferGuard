@@ -278,6 +278,9 @@ def _build_library() -> dict[str, list[dict]]:
 
 CASE_LIBRARY: dict[str, list[dict]] = _build_library()
 
+# Canonical defect-type order used by the data-management RAG browser.
+DEFECT_TYPES: list[str] = list(CASE_LIBRARY.keys())
+
 
 def _query_score(line_id: str, case: dict) -> float:
     """Deterministic pseudo-similarity blending a case's base relevance with a
@@ -289,11 +292,11 @@ def _query_score(line_id: str, case: dict) -> float:
     return 0.70 + 0.27 * combined
 
 
-def search_cases(defect_type: str, line_id: str) -> list[dict]:
+def search_cases(defect_type: str, line_id: str, k: int = 3) -> list[dict]:
     pool = CASE_LIBRARY.get(defect_type) or CASE_LIBRARY["Random"]
     ranked = sorted(pool, key=lambda c: _query_score(line_id, c), reverse=True)
     results: list[dict] = []
-    for case in ranked[:3]:
+    for case in ranked[:k]:
         results.append(
             {
                 "title": case["title"],
@@ -304,9 +307,10 @@ def search_cases(defect_type: str, line_id: str) -> list[dict]:
                 "date": case.get("date"),
                 "similarity": round(_query_score(line_id, case), 2),
                 "line_context": f"{line_id} 최근 24시간 추세와 함께 비교",
+                "source": "case_library",
             }
         )
-    if len(results) < 3:
+    if not results:
         results.append(
             {
                 "title": "표준 결함 대응 SOP",
@@ -314,9 +318,10 @@ def search_cases(defect_type: str, line_id: str) -> list[dict]:
                 "action": "신뢰도 0.70 미만 또는 신규 패턴이면 Human-in-the-Loop 검토 큐로 이동",
                 "similarity": 0.70,
                 "line_context": f"{line_id} 공정 로그와 lot 이력 확인",
+                "source": "sop",
             }
         )
-    return results[:3]
+    return results[:k]
 
 
 # ---------------------------------------------------------------------------
@@ -369,21 +374,21 @@ def retrieve_cases(
     try:
         from app.services import luxia_client, storage  # noqa: PLC0415
     except ImportError:
-        return search_cases(defect_type, line_id)
+        return search_cases(defect_type, line_id, k)
 
     if luxia_client._api_key() is None:
-        return search_cases(defect_type, line_id)
+        return search_cases(defect_type, line_id, k)
 
     try:
         query = _vector_query_text(defect_type, line_id, query_text)
         vecs = luxia_client.embed([query])
         qv = vecs[0] if vecs else []
         if not qv or not any(qv):
-            return search_cases(defect_type, line_id)
+            return search_cases(defect_type, line_id, k)
 
         raw = storage.query_rag(qv, k=max(k * 4, 12))
         if not raw:
-            return search_cases(defect_type, line_id)
+            return search_cases(defect_type, line_id, k)
 
         try:
             rr = luxia_client.rerank(query, [d.get("content", "") for d in raw], top_k=k)
@@ -397,10 +402,10 @@ def retrieve_cases(
             ordered = [(d, d.get("similarity", 0.0)) for d in raw[:k]]
 
         results = [_doc_to_case(doc, score, line_id) for doc, score in ordered[:k]]
-        return results or search_cases(defect_type, line_id)
+        return results or search_cases(defect_type, line_id, k)
     except Exception as exc:  # noqa: BLE001
         logger.warning("retrieve_cases vector path failed (%s) — using legacy library", exc)
-        return search_cases(defect_type, line_id)
+        return search_cases(defect_type, line_id, k)
 
 
 def ensure_rag_index(force: bool = False) -> dict:
@@ -457,3 +462,70 @@ def ensure_rag_index(force: bool = False) -> dict:
 
     logger.info("RAG index seeded: %d/%d documents", written, len(corpus))
     return {"seeded": written, "total": len(corpus)}
+
+
+# ---------------------------------------------------------------------------
+# Data-management surface: index stats + free-text case browsing. These power
+# the "데이터 관리 · RAG" view. Both degrade to the deterministic case library
+# when the vector index is unavailable, so the UI always has live data to show.
+# ---------------------------------------------------------------------------
+
+
+def index_stats() -> dict:
+    """Live stats for the RAG index, for the data-management view.
+
+    Reports the vector index (``rag_documents``) when it is populated, otherwise
+    the deterministic case library that retrieval falls back to.
+    """
+    library_counts = {dt: len(cases) for dt, cases in CASE_LIBRARY.items()}
+    try:
+        from app.services import luxia_client, storage  # noqa: PLC0415
+
+        if luxia_client._api_key() is not None:
+            indexed = storage.count_rag_documents()
+            if indexed > 0:
+                by_type = storage.rag_type_counts()
+                return {
+                    "indexed": indexed,
+                    "source": "vector",
+                    "retrieval": "embedding cosine + rerank",
+                    "by_type": by_type,
+                    "defect_types": DEFECT_TYPES,
+                }
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("index_stats vector path failed (%s) — using library", exc)
+
+    return {
+        "indexed": sum(library_counts.values()),
+        "source": "library",
+        "retrieval": "deterministic case library",
+        "by_type": library_counts,
+        "defect_types": DEFECT_TYPES,
+    }
+
+
+def browse_cases(
+    defect_type: str,
+    query: str | None = None,
+    line_id: str = "LINE-7",
+    k: int = 6,
+) -> dict:
+    """Top-k case retrieval for the data-management browser.
+
+    Routes through the unified ``retrieve_cases`` path (vector when available,
+    case library otherwise) and reports which source answered so the UI can
+    label the result honestly.
+    """
+    dt = defect_type if defect_type in CASE_LIBRARY else "Random"
+    k = max(1, min(int(k or 6), 12))
+    cases = retrieve_cases(dt, line_id, query_text=query, k=k)
+    sources = {c.get("source") for c in cases}
+    answered_by = "vector" if sources - {"case_library", "sop"} else "library"
+    return {
+        "defect_type": dt,
+        "query": (query or "").strip(),
+        "line_id": line_id,
+        "count": len(cases),
+        "source": answered_by,
+        "cases": cases,
+    }

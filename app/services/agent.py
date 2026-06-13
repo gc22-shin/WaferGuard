@@ -38,7 +38,6 @@ Tool function signatures (defined in app/services/tools.py):
     search_similar_cases(query: str, k: int = 3) -> list[dict]
     inspect_image(image_url: str, focus: str) -> dict
     enqueue_for_review(inspection_id: str, reason: str) -> dict
-    trigger_critical_alert(inspection_id: str, message: str) -> dict
     recommend_retrain(reason: str) -> dict
 """
 from __future__ import annotations
@@ -135,30 +134,6 @@ _TOOL_SCHEMAS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "trigger_critical_alert",
-            "description": (
-                "Critical alert를 생성합니다 (High-risk Tool). "
-                "실행 전 사람 승인이 필요하며, pending_approvals 테이블에 기록됩니다."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "inspection_id": {
-                        "type": "string",
-                        "description": "알림 대상 inspection ID",
-                    },
-                    "message": {
-                        "type": "string",
-                        "description": "알림 메시지 (결함 유형, 위험도, 조치 요청 포함)",
-                    },
-                },
-                "required": ["inspection_id", "message"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "recommend_retrain",
             "description": (
                 "재학습 추천을 생성합니다 (High-risk Tool). "
@@ -210,7 +185,7 @@ _SYSTEM_PROMPT = """당신은 WaferGuard Fab Ops Agent입니다.
 규칙:
 1. Evidence(risk score, metrology rule hit, RAG 유사 사례)를 해석하되, 새 risk score를 임의로 생성하지 않습니다.
 2. 제공된 RAG 사례 외에 출처 없는 사례를 인용하지 않습니다 (환각 방지).
-3. High-risk Tool(trigger_critical_alert, recommend_retrain)은 반드시 명확한 근거와 함께 호출합니다.
+3. High-risk Tool(recommend_retrain)은 반드시 명확한 근거와 함께 호출합니다. High 리스크 검사는 시스템이 자동으로 critical alert를 발생시키므로, 에이전트가 별도로 알림을 만들 필요는 없습니다.
 4. 판단이 불확실하면 enqueue_for_review로 엔지니어에게 넘깁니다.
 5. 최종 판단은 한국어로 간결하게 작성합니다.
 6. 본 시뮬레이션에서 결함 분류는 입력값이며, Agent는 분류 결과에 대한 운영 판단을 시뮬레이션합니다.
@@ -259,7 +234,6 @@ def _get_tool_registry() -> dict[str, Any]:
             "search_similar_cases": tools.search_similar_cases,
             "inspect_image": tools.inspect_image,
             "enqueue_for_review": tools.enqueue_for_review,
-            "trigger_critical_alert": tools.trigger_critical_alert,
             "recommend_retrain": tools.recommend_retrain,
             "get_equipment_history": tools.get_equipment_history,
             "get_metrology_trend": tools.get_metrology_trend,
@@ -280,7 +254,6 @@ def _stub_registry() -> dict[str, Any]:
         "search_similar_cases": lambda **kwargs: [_stub(**kwargs)],
         "inspect_image": lambda **kwargs: _stub(**kwargs),
         "enqueue_for_review": lambda **kwargs: _stub(**kwargs),
-        "trigger_critical_alert": lambda **kwargs: _stub(**kwargs),
         "recommend_retrain": lambda **kwargs: _stub(**kwargs),
         "get_equipment_history": lambda **kwargs: _stub(**kwargs),
         "get_metrology_trend": lambda **kwargs: _stub(**kwargs),
@@ -616,6 +589,7 @@ def _drive_and_persist(
     use_llm: bool,
     rule_fallback,
     agent_kind: str = "inspection",
+    extra_trace: dict | None = None,
 ) -> dict:
     agent_mode = "llm" if use_llm and os.environ.get("LUXIA_API_KEY", "").strip() else "stub"
 
@@ -638,6 +612,10 @@ def _drive_and_persist(
         "tool_calls": final_state["tool_calls_log"],
         "final_action": final_state["final_action"],
         "agent_mode": agent_mode,
+        # how this run was triggered ("manual" | "delegation"), plus any source —
+        # lets the MLOps monitoring log surface delegated runs distinctly.
+        "trigger": "manual",
+        **(extra_trace or {}),
     }
     try:
         trace_id = insert_agent_trace(inspection_id, trace)
@@ -765,12 +743,21 @@ def _build_mlops_evidence(line_id: str) -> str:
     return "\n".join(lines)
 
 
-def run_mlops_agent(line_id: str = "ALL", use_llm: bool = True, autonomy: str = "approval") -> dict:
+def run_mlops_agent(
+    line_id: str = "ALL",
+    use_llm: bool = True,
+    autonomy: str = "approval",
+    trigger: str = "manual",
+    source: str | None = None,
+) -> dict:
     """Run the MLOps agent over current fleet/model state.
 
     ``autonomy`` controls what happens when the agent decides to retrain:
     "auto" (execute now), "approval" (queue for human approval), "notify"
-    (alert only). Returns the same shape as ``run``.
+    (alert only). ``trigger`` marks how the run started ("manual" or "delegation"
+    from the inspection agent) and ``source`` is the originating context — both are
+    stored on the trace so the MLOps monitoring log can surface delegated runs.
+    Returns the same shape as ``run``.
     """
     evidence_text = _build_mlops_evidence(line_id)
     trace_key = f"MLOPS-{line_id}"
@@ -804,7 +791,10 @@ def run_mlops_agent(line_id: str = "ALL", use_llm: bool = True, autonomy: str = 
             + evidence_text
         )
 
-    return _drive_and_persist(initial_state, use_llm, _rule_fallback, agent_kind="mlops")
+    return _drive_and_persist(
+        initial_state, use_llm, _rule_fallback, agent_kind="mlops",
+        extra_trace={"trigger": trigger, "source": source, "autonomy": autonomy},
+    )
 
 
 # ---------------------------------------------------------------------------

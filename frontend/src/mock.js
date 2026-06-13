@@ -1,31 +1,5 @@
 import { buildWaferMap } from "./wafer";
 
-// ── RAG mock ──────────────────────────────────────────────────────────────────
-export const ragCases = [
-  {
-    id: "CASE-9F21", date: "2026-05-22", sim: 0.94, device: "N5P-SRAM-A0",
-    title: "엣지 밴드 결함 — EBR 폭 변동", tool: "ETCH-04 / C2",
-    action: "EBR recipe 0.2mm 축소 후 재검사", result: "resolved", resultLabel: "해결 (수율 +0.4%p)",
-    riskThen: "Low",
-  },
-  {
-    id: "CASE-8C07", date: "2026-04-30", sim: 0.88, device: "N5P-LOGIC-B2",
-    title: "3시 방향 파티클 클러스터", tool: "ETCH-04 / C2",
-    action: "챔버 PM(예방정비) 후 정상화", result: "resolved", resultLabel: "해결 (PM 적용)",
-    riskThen: "Medium",
-  },
-  {
-    id: "CASE-7A55", date: "2026-03-18", sim: 0.81, device: "N5P-SRAM-A1",
-    title: "CMP 슬러리 유량 드리프트", tool: "CMP-02 / H1",
-    action: "유량 PID 재튜닝, 24h 모니터", result: "monitored", resultLabel: "모니터 후 종결",
-    riskThen: "Medium",
-  },
-];
-
-export const ragMetrics = {
-  recallAt3: 0.91, recallAt5: 0.96, precision: 0.88, indexed: 48213, latencyMs: 142,
-};
-
 // ── MLOps mock ────────────────────────────────────────────────────────────────
 export const registry = [
   { ver: "v4.2.1", arch: "ViT-Defect-L", status: "production", auroc: 0.987, acc: 0.961, promoted: "2026-05-26", traffic: 100 },

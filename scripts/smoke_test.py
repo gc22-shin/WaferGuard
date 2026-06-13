@@ -66,6 +66,21 @@ def main() -> None:
     assert rag_eval.status_code == 200, rag_eval.text
     assert rag_eval.json()["summary"]["question_count"] >= 10
 
+    rag_index = client.get("/api/v1/rag/index")
+    assert rag_index.status_code == 200, rag_index.text
+    index_payload = rag_index.json()
+    assert index_payload["indexed"] >= 1
+    assert len(index_payload["defect_types"]) == 9
+
+    rag_search = client.get(
+        "/api/v1/rag/search",
+        params={"defect_type": "Edge-Ring", "q": "EBR nozzle", "k": 6},
+    )
+    assert rag_search.status_code == 200, rag_search.text
+    search_payload = rag_search.json()
+    assert search_payload["defect_type"] == "Edge-Ring"
+    assert search_payload["cases"], "expected at least one similar case"
+
     proxy_datasets = client.get("/api/v1/proxy-datasets")
     assert proxy_datasets.status_code == 200, proxy_datasets.text
     assert "반도체 fab 이미지로 표현하면 안 됩니다" in proxy_datasets.json()["source_boundary"]

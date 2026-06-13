@@ -191,40 +191,10 @@ def enqueue_for_review(inspection_id: str, reason: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Tool 4: trigger_critical_alert
-# ---------------------------------------------------------------------------
-
-def trigger_critical_alert(inspection_id: str, message: str) -> dict:
-    """
-    Insert a pending approval record for a critical alert.
-    Requires human approval before the alert fires.
-    """
-    storage = _get_storage()
-    approval_id: str | None = None
-
-    if storage is not None:
-        try:
-            insert_pending_approval = getattr(storage, "insert_pending_approval", None)
-            if insert_pending_approval is not None:
-                approval_id = insert_pending_approval(
-                    inspection_id=inspection_id,
-                    tool_name="trigger_critical_alert",
-                    payload={"message": message},
-                    reason=message,
-                )
-        except Exception as exc:
-            logger.warning("trigger_critical_alert storage call failed: %s", exc)
-
-    return {
-        "ok": True,
-        "approval_id": approval_id,
-        "inspection_id": inspection_id,
-        "status": "pending",
-    }
-
-
-# ---------------------------------------------------------------------------
 # Tool 5: recommend_retrain  (autonomy-aware)
+# (trigger_critical_alert was removed: High-risk inspections already raise a
+#  critical alert in the pipeline, so the agent doesn't need an approval-gated
+#  alert tool — it only cluttered the MLOps pending-approvals queue.)
 # ---------------------------------------------------------------------------
 
 def execute_retrain_decision(reason: str, mode: str = "approval") -> dict:
@@ -524,7 +494,10 @@ def escalate_to_mlops(reason: str, line_id: str = "ALL", equipment_id: str | Non
 
     context = reason if not equipment_id else f"{reason} (설비 {equipment_id})"
     try:
-        result = run_mlops_agent(line_id=line_id, use_llm=True, autonomy="approval")
+        result = run_mlops_agent(
+            line_id=line_id, use_llm=True, autonomy="approval",
+            trigger="delegation", source=equipment_id or reason,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("escalate_to_mlops run failed: %s", exc)
         return {"ok": False, "error": str(exc), "reason": context}
@@ -548,7 +521,6 @@ TOOL_REGISTRY: dict[str, Callable] = {
     "search_similar_cases": search_similar_cases,
     "inspect_image": inspect_image,
     "enqueue_for_review": enqueue_for_review,
-    "trigger_critical_alert": trigger_critical_alert,
     "recommend_retrain": recommend_retrain,
     "get_equipment_history": get_equipment_history,
     "get_metrology_trend": get_metrology_trend,
@@ -629,30 +601,6 @@ TOOL_SCHEMAS: list[dict] = [
                     },
                 },
                 "required": ["inspection_id", "reason"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "trigger_critical_alert",
-            "description": (
-                "High-risk 결함에 대해 긴급 알림을 발송한다. "
-                "엔지니어 승인 후 실제 알림이 전송되는 pending approval 방식으로 처리된다."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "inspection_id": {
-                        "type": "string",
-                        "description": "알림을 발송할 검사 ID",
-                    },
-                    "message": {
-                        "type": "string",
-                        "description": "알림 메시지 (결함 유형, 위험도, 권고 조치 포함)",
-                    },
-                },
-                "required": ["inspection_id", "message"],
             },
         },
     },

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Icon, Panel, Markdown, ToolCalls } from "./lib";
 import { useStream } from "./SettingsContext";
 import { useMlopsAgent } from "./MlopsAgentContext";
@@ -16,7 +16,6 @@ const AUTONOMY = [
   { id: "auto",     label: "자동 실행", icon: "play",  color: "var(--high)", desc: "재학습 트리거를 사람 승인 없이 즉시 실행합니다." },
   { id: "approval", label: "승인 요청", icon: "check", color: "var(--med)",  desc: "재학습을 승인 대기열에 등록하고 엔지니어 승인 후 실행합니다." },
 ];
-const MONITOR_INTERVAL_MS = 90000;
 const MAX_LOGS = 30;
 
 function AutonomyPicker({ value, onChange, disabled }) {
@@ -84,6 +83,12 @@ function LogEntry({ entry }) {
           }}>
           <Icon name={running ? "refresh" : "bot"} size={12}
             style={running ? { animation: "spin 1s linear infinite", color: "var(--accent)" } : { color: "var(--accent)" }} />
+          {entry.delegated && (
+            <span className="chip" title={entry.source ? `위임 출처: ${entry.source}` : "검사 에이전트가 위임"}
+              style={{ fontSize: 8.5, color: "var(--accent)", borderColor: "var(--accent-line)" }}>
+              <Icon name="handoff" size={10} />검사→위임
+            </span>
+          )}
           {am && <span className="chip" style={{ fontSize: 8.5, color: am.color, borderColor: am.color }}>{am.label}</span>}
           {running ? (
             <span style={{ fontSize: 12, fontWeight: 650, color: "var(--accent)" }}>분석 진행 중…</span>
@@ -122,14 +127,14 @@ function LogEntry({ entry }) {
 }
 
 export default function MlopsAgentView() {
-  const { settings } = useStream();
-  // state lives in a root-level context so the log survives tab navigation
+  const { settings, tick } = useStream();
+  // state + run loop + auto-monitor timer live in a root-level context, so the log
+  // and auto-monitoring survive tab navigation (see MlopsAgentContext)
   const {
     logs, setLogs,
     autonomy, setAutonomy,
     autoMonitor, setAutoMonitor,
-    running, setRunning,
-    runningRef, idRef,
+    running, run,
   } = useMlopsAgent();
   const logRef = useRef(null);
 
@@ -137,77 +142,39 @@ export default function MlopsAgentView() {
     if (logRef.current) logRef.current.scrollTop = 0; // newest entry is on top
   }, [logs]);
 
-  // auto monitoring — available in BOTH modes; re-runs on an interval
-  useEffect(() => {
-    if (!(autoMonitor && settings.useLlm)) return;
-    const id = setInterval(() => { if (!runningRef.current) run(); }, MONITOR_INTERVAL_MS);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoMonitor, settings.useLlm]);
-
-  // patch the active (front) log entry
-  const patchFront = (fn) => setLogs(l => {
-    if (!l.length) return l;
-    const c = l.slice();
-    c[0] = fn(c[0]);
-    return c;
-  });
-
-  function applyEvent(ev) {
-    if (ev.type === "tool_call") {
-      patchFront(e => ({ ...e, steps: [...e.steps, { name: ev.name, args: ev.args, status: "running" }] }));
-    } else if (ev.type === "tool_result") {
-      patchFront(e => {
-        const steps = e.steps.slice();
-        for (let i = steps.length - 1; i >= 0; i--) {
-          if (steps[i].status === "running") { steps[i] = { ...steps[i], status: "done", summary: ev.summary, result: ev.result }; break; }
-        }
-        return { ...e, steps };
-      });
-    } else if (ev.type === "token") {
-      patchFront(e => ({ ...e, finalText: e.finalText + ev.text }));
-    } else if (ev.type === "done") {
-      patchFront(e => ({ ...e, finalText: ev.final_action || e.finalText, mode: ev.agent_mode || "llm" }));
-    }
-  }
-
-  async function run() {
-    if (runningRef.current || !settings.useLlm) return;
-    runningRef.current = true;
-    setRunning(true);
-    const ts = new Date().toTimeString().slice(0, 8);
-    const id = ++idRef.current;
-    setLogs(l => [{ id, ts, autonomy, steps: [], finalText: "", mode: null, status: "running" }, ...l].slice(0, MAX_LOGS));
+  // surface MLOps runs triggered by delegation (escalate_to_mlops from the
+  // inspection agent). These happen server-side, so poll for them and merge any
+  // new ones into the log — manual/auto runs are already shown live, so we only
+  // pull the delegation-triggered ones to avoid duplicates.
+  const loadDelegations = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/v1/mlops/agent/run/stream`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ line_id: "ALL", use_llm: settings.useLlm, autonomy }),
+      const r = await fetch(`${API_BASE}/api/v1/mlops/agent/traces?limit=20`);
+      if (!r.ok) return;
+      const data = await r.json();
+      const dels = (Array.isArray(data) ? data : []).filter(t => t.trigger === "delegation");
+      if (dels.length === 0) return;
+      setLogs(prev => {
+        const have = new Set(prev.map(e => e.id));
+        const fresh = dels
+          .filter(t => !have.has(t.trace_id))
+          .map(t => ({
+            id: t.trace_id,
+            ts: (t.created_at || "").slice(11, 19),
+            autonomy: t.autonomy || "approval",
+            steps: (t.tool_calls || []).map(tc => ({ name: tc.name, args: tc.args, status: "done", result: tc.result })),
+            finalText: t.final_action || "",
+            mode: t.agent_mode || "llm",
+            status: "done",
+            delegated: true,
+            source: t.source,
+          }));
+        if (fresh.length === 0) return prev;
+        return [...fresh, ...prev].slice(0, MAX_LOGS);
       });
-      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      for (;;) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buf += decoder.decode(value, { stream: true });
-        const blocks = buf.split("\n\n");
-        buf = blocks.pop() || "";
-        for (const block of blocks) {
-          const line = block.split("\n").find(l => l.startsWith("data:"));
-          if (!line) continue;
-          try { applyEvent(JSON.parse(line.slice(5).trim())); } catch { /* skip */ }
-        }
-      }
-    } catch (e) {
-      patchFront(en => ({ ...en, finalText: `오류: 분석을 실행하지 못했습니다 (${e.message})`, mode: "error" }));
-    } finally {
-      patchFront(en => ({ ...en, status: "done" }));
-      runningRef.current = false;
-      setRunning(false);
-    }
-  }
+    } catch { /* ignore */ }
+  }, [setLogs]);
+
+  useEffect(() => { loadDelegations(); }, [loadDelegations, tick]);
 
   const activeMode = AUTONOMY.find(a => a.id === autonomy);
 

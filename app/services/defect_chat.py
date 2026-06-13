@@ -1,12 +1,16 @@
 """
-Defect chat — agentic LLM Q&A about a single inspection.
+Defect chat — the inspection agent in conversational mode.
 
-The chat is grounded in the inspection's evidence but is no longer single-shot:
-it can call read-only tools (equipment history, metrology trend, MLOps state,
-RAG search, multimodal wafer comparison) to answer questions whose answer is not
-in the static evidence ("이 설비 최근에도 이랬어?"), and one write tool
-(save_case_to_knowledge) so an engineer's stated action/conclusion gets recorded
-back into the RAG corpus.
+This is the SAME agent as the per-wafer inspection agent (agent.py): it shares that
+agent's persona (system prompt) and full toolset — RAG search, equipment history,
+metrology trend, MLOps state, image inspection/comparison, enqueue-for-review,
+recommend-retrain, and escalate-to-MLOps (multi-agent handoff) — grounded in this
+inspection's evidence. On top of that it adds save_case_to_knowledge so an
+engineer's stated action/conclusion gets recorded back into the RAG corpus.
+
+The only difference from the one-shot analysis run is the turn structure: this is a
+multi-turn, streaming conversation. The persona and tools are defined once in
+agent.py and reused here (see _system_prompt / _chat_tool_schemas / _chat_tool_registry).
 
 Two entry points share one loop:
 - ``stream_chat_about_inspection`` yields event dicts for SSE (tool_call /
@@ -29,47 +33,37 @@ _MAX_HISTORY = 10
 _MAX_ITERATIONS = 4
 _CHUNK_SIZE = 3  # chars per streamed token-ish chunk
 
-# Tools the chat agent may call. Mostly read-only lookups, plus one write tool:
-# save_case_to_knowledge, so when the engineer states an action/conclusion in chat
-# the agent can record it back into the RAG corpus (grounded with this inspection's
-# context — see _chat_tool_registry).
-_CHAT_TOOL_NAMES = (
-    "search_similar_cases",
-    "get_equipment_history",
-    "get_metrology_trend",
-    "get_mlops_state",
-    "compare_with_past_wafer",
-    "save_case_to_knowledge",
+# The chat IS the inspection agent in conversational mode — same persona, same
+# toolset (loaded from agent.py), plus one extra write tool: save_case_to_knowledge,
+# so an engineer's stated action lands back in the RAG corpus. See _chat_tool_*.
+_EXTRA_CHAT_TOOL = "save_case_to_knowledge"
+
+# Conversation-mode addendum, appended to the inspection agent's system prompt so
+# the two share one identity and one set of rules.
+_CHAT_ADDENDUM = (
+    "\n\n=== 대화 모드 ===\n"
+    "지금은 위 역할 그대로, 엔지니어와 실시간으로 대화하는 모드입니다. 아래 규칙을 추가로 따릅니다.\n"
+    "1. 아래 [검사 Evidence]와 '에이전트 분석'이 이 검사의 확정 정보입니다. '구체적인 정보가 필요하다', "
+    "'어떤 결함/설비인지 알려달라'고 절대 되묻지 말고, 주어진 내용만으로 바로 구체적으로 답합니다.\n"
+    "2. '그래서 뭐부터 해야 돼?' 류 질문에는 권장 액션·추정 원인을 근거로 1·2·3 우선순위 조치를 제시합니다.\n"
+    "3. evidence에 없는 정보(같은 설비 과거 이력, 계측 추세, 모델/drift 상태, 추가 유사 사례)가 필요하면 "
+    "도구로 직접 조회해 인용합니다. 수치는 지어내지 않습니다.\n"
+    "4. 엔지니어가 취할 조치나 결론을 밝히면(예: 'EBR 노즐 압력 점검하고 교체할게', '오탐으로 종결') "
+    "save_case_to_knowledge로 RAG 지식베이스에 저장하고 '○○ 조치를 기록했습니다'라고 한 줄로 알립니다. "
+    "단순 질문에는 저장하지 않습니다.\n"
+    "5. 이미지는 첨부되지 않습니다. 결함 이미지를 직접 봐야 하면 inspect_image(image_url, focus)에 "
+    "아래 evidence에 적힌 이미지 URL을 넣어 호출합니다.\n"
+    "6. 답변은 한국어로 3~6문장 또는 번호 목록으로 간결하게. 되묻지 말고 가장 합리적인 다음 행동을 제안합니다."
 )
 
-_SYSTEM_PROMPT = (
-    "당신은 WaferGuard의 반도체 공정 결함 대응 어시스턴트입니다. "
-    "엔지니어는 지금 특정 검사(웨이퍼) 한 건을 보고 있고, 그 검사의 evidence(분류 결과, 리스크, "
-    "계측값, 계측 룰 히트, 추정 원인, 권장 액션, RAG 유사 사례, Agent 판단)가 아래에 주어집니다.\n"
-    "역할과 답변 규칙:\n"
-    "1. 항상 '이 검사' 맥락 안에서, 현장 엔지니어에게 말하듯 한국어로 구체적으로 답합니다.\n"
-    "2. 함께 제공되는 이미지는 '이 웨이퍼의 Grad-CAM/ROI 결함 이미지'입니다. 절대 "
-    "'이 이미지는 무엇을 시각화한 것처럼 보입니다' 같은 일반적·추상적 설명을 하지 마세요. "
-    "결함 위치·패턴을 evidence와 연결해 해석합니다.\n"
-    "3. '그래서 내가 뭐해야돼?', '어떻게 조치해?', '다음 뭐 봐야돼?' 같은 질문에는 절대 일반론으로 "
-    "답하지 말고, 위 evidence의 '권장 액션'과 '추정 원인'을 근거로 우선순위가 있는 구체적 조치를 "
-    "1·2·3 번호로 제시합니다 (예: '1) ETCH-02 EBR nozzle 압력 로그부터 확인 → ...').\n"
-    "4. evidence로 답할 수 있으면 evidence 범위 안에서 답합니다. evidence에 없는 정보(같은 설비 과거 "
-    "이력, 계측 추세, 모델/drift 상태, 추가 유사 사례)가 필요하면 도구를 호출해 실제 데이터를 조회한 뒤 "
-    "답합니다. 수치를 지어내지 않습니다.\n"
-    "5. 'ETCH-02에서 최근에도 이랬어?'는 get_equipment_history로, '계속 밀리는 거야?'는 "
-    "get_metrology_trend로 직접 확인하고, 결과를 근거로 인용합니다 (예: '24h 내 동일 결함 5회 → 반복성').\n"
-    "6. 답변은 3~6문장 또는 번호 목록으로 간결하게. 질문이 모호해도 되묻지 말고, 이 검사에서 가장 "
-    "합리적인 다음 행동을 제안합니다.\n"
-    "7. 이 검사의 결함 유형·설비·계측값·추정 원인·권장 액션·에이전트 판단은 아래 evidence와 "
-    "'에이전트 분석'에 이미 모두 주어져 있습니다. 절대 '구체적인 정보가 필요하다', '어떤 결함/설비인지 "
-    "알려달라', '세부 사항을 제공해 달라'고 되묻지 마세요. 주어진 내용만으로 바로 구체적으로 답합니다.\n"
-    "8. 엔지니어가 자신이 취할 조치나 결론을 밝히면(예: 'EBR 노즐 압력 점검하고 교체할게', "
-    "'이건 오탐으로 종결', '설비 점검 의뢰함') 반드시 save_case_to_knowledge 도구를 호출해 그 조치를 "
-    "RAG 지식베이스에 저장하세요. title은 '결함유형 대응 — 설비', summary는 현재 상황 요약, action은 "
-    "엔지니어가 말한 조치 내용으로 채웁니다. 저장 후 '○○ 조치를 지식베이스에 기록했습니다'라고 한 줄로 "
-    "알려, 이후 유사 검사에서 검색되도록 합니다. 단순 질문·조회에는 저장하지 말고, 실제 조치/결론일 때만 저장합니다."
-)
+
+def _system_prompt() -> str:
+    """Inspection-agent persona + conversation-mode rules (one unified agent)."""
+    try:
+        from app.services.agent import _SYSTEM_PROMPT as _AGENT_PROMPT  # noqa: PLC0415
+    except Exception:  # noqa: BLE001
+        _AGENT_PROMPT = "당신은 WaferGuard Fab Ops Agent입니다. 반도체 공정 이상 상황을 판단하고 대응합니다."
+    return _AGENT_PROMPT + _CHAT_ADDENDUM
 
 
 def _evidence_context(record: dict, trace: dict | None) -> str:
@@ -105,83 +99,72 @@ def _evidence_context(record: dict, trace: dict | None) -> str:
         lines.append(f"Agent 판단: {trace['final_action']}")
     if record.get("report"):
         lines.append(f"분석 리포트: {record['report']}")
+    overlay = record.get("overlay_url")
+    roi = record.get("roi_url")
     lines.append(
         "\n[도구 사용 힌트] 이 설비 ID="
         f"{record.get('equipment_id')}, 결함 유형={record.get('defect_type')}. "
-        "과거 이력/추세 질문에는 이 값을 도구 인자로 사용하세요."
+        "과거 이력/추세 질문에는 이 값을 도구 인자로 사용하세요. "
+        f"이미지 URL: overlay={overlay}, roi={roi} (inspect_image/compare_with_past_wafer에 사용)."
     )
     return "\n".join(lines)
 
 
 def _chat_tool_schemas() -> list[dict]:
+    """Same toolset as the inspection agent, plus save_case_to_knowledge."""
     try:
+        from app.services.agent import _TOOL_SCHEMAS  # noqa: PLC0415
         from app.services.tools import TOOL_SCHEMAS  # noqa: PLC0415
-
-        return [s for s in TOOL_SCHEMAS if s.get("function", {}).get("name") in _CHAT_TOOL_NAMES]
     except ImportError:
         return []
+    schemas = list(_TOOL_SCHEMAS)
+    save = next((s for s in TOOL_SCHEMAS if s.get("function", {}).get("name") == _EXTRA_CHAT_TOOL), None)
+    if save is not None:
+        schemas.append(save)
+    return schemas
 
 
 def _chat_tool_registry(record: dict) -> dict:
+    """The inspection agent's tool registry + save_case_to_knowledge bound to this
+    inspection (so a chat-recorded action is traceable)."""
     try:
-        from app.services.tools import TOOL_REGISTRY  # noqa: PLC0415
+        from app.services.agent import _get_tool_registry  # noqa: PLC0415
+        from app.services.tools import save_case_to_knowledge as base_save  # noqa: PLC0415
     except ImportError:
         return {}
-    registry = {n: TOOL_REGISTRY[n] for n in _CHAT_TOOL_NAMES if n in TOOL_REGISTRY}
+    registry = dict(_get_tool_registry())
 
-    # Bind save_case_to_knowledge to THIS inspection: the LLM supplies the
-    # title/summary/action, we attach the inspection context as metadata and
-    # default the defect type, so a chat-recorded case is traceable.
-    base_save = registry.get("save_case_to_knowledge")
-    if base_save is not None:
-        def _save(title, summary, action, defect_type=None, **_):
-            return base_save(
-                title=title,
-                summary=summary,
-                action=action,
-                defect_type=defect_type or record.get("defect_type"),
-                metadata={
-                    "inspection_id": record.get("id"),
-                    "equipment_id": record.get("equipment_id"),
-                    "source": "engineer_chat",
-                },
-            )
-        registry["save_case_to_knowledge"] = _save
+    def _save(title, summary, action, defect_type=None, **_):
+        return base_save(
+            title=title,
+            summary=summary,
+            action=action,
+            defect_type=defect_type or record.get("defect_type"),
+            metadata={
+                "inspection_id": record.get("id"),
+                "equipment_id": record.get("equipment_id"),
+                "source": "engineer_chat",
+            },
+        )
+
+    registry[_EXTRA_CHAT_TOOL] = _save
     return registry
 
 
 def _summarize_tool_result(name: str, result: object) -> str:
-    """Short human-readable line shown in the chat tool-activity UI."""
-    if not isinstance(result, dict):
-        if isinstance(result, list):
-            return f"{len(result)}건 반환"
-        return str(result)[:80]
-    if result.get("error"):
-        return f"오류: {result['error']}"
-    if name == "get_equipment_history":
-        rec = "· 반복성 결함" if result.get("is_recurring") else ""
-        return (
-            f"{result.get('equipment_id')} 최근 {result.get('window_hours')}h: "
-            f"검사 {result.get('total_inspections')}건, 동일결함 {result.get('same_defect_count')}회 {rec}"
-        )
-    if name == "get_metrology_trend":
-        return (
-            f"{result.get('metric')} 추세 {result.get('trend')} "
-            f"(Δ{result.get('delta')}, {result.get('pct_change')}%, n={result.get('n')})"
-        )
-    if name == "get_mlops_state":
-        pm = result.get("production_model") or {}
-        de = result.get("latest_drift_event") or {}
-        return f"운영모델 F1 {pm.get('f1_score', '?')}, drift {de.get('status', '?')}"
-    if name == "compare_with_past_wafer":
-        return "웨이퍼 이미지 비교 완료"
-    if name == "search_similar_cases":
-        return "유사 사례 검색 완료"
+    """Short human-readable line shown in the tool-activity UI. Delegates to the
+    inspection agent's summarizer so both modes describe tools identically."""
     if name == "save_case_to_knowledge":
-        if result.get("ok"):
+        if isinstance(result, dict) and result.get("ok"):
             return f"지식베이스 저장 완료 ({result.get('doc_id', 'saved')})"
-        return f"저장 실패: {result.get('error', '알 수 없음')}"
-    return "완료"
+        err = result.get("error", "알 수 없음") if isinstance(result, dict) else result
+        return f"저장 실패: {err}"
+    try:
+        from app.services.agent import _summarize_inspection_tool  # noqa: PLC0415
+
+        return _summarize_inspection_tool(name, result)
+    except Exception:  # noqa: BLE001
+        return "완료"
 
 
 def _stub_message(use_llm: bool) -> str:
@@ -230,7 +213,7 @@ def stream_chat_about_inspection(
     # analysis remains available through tools (inspect_image / compare_with_past_wafer).
     image_urls: list[str] = []
 
-    system_content = _SYSTEM_PROMPT + "\n\n[검사 Evidence]\n" + _evidence_context(record, trace)
+    system_content = _system_prompt() + "\n\n[검사 Evidence]\n" + _evidence_context(record, trace)
     if extra_context and extra_context.strip():
         system_content += "\n\n[화면에 표시된 AI 추천 — 엔지니어가 보고 있는 내용]\n" + extra_context.strip()
     messages: list[dict] = [

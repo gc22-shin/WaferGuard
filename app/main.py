@@ -18,6 +18,7 @@ from app.services.evaluation import wm811k_evaluation_report
 from app.services.handoff import generate_handoff_report, get_latest_handoff_report
 from app.services.mlops import pipeline_state, promote_latest, rollback, simulate_drift, simulate_retraining
 from app.services.pipeline import run_inspection
+from app.services.rag import browse_cases, index_stats
 from app.services.rag_eval import rag_evaluation_set
 from app.services.defect_chat import chat_about_inspection, stream_chat_about_inspection
 from app.services.schemas import (
@@ -237,6 +238,23 @@ def rag_evaluation() -> dict[str, object]:
     return rag_evaluation_set()
 
 
+@app.get("/api/v1/rag/index")
+def rag_index() -> dict[str, object]:
+    """Live RAG index stats (indexed count, retrieval mode, per-type counts)."""
+    return index_stats()
+
+
+@app.get("/api/v1/rag/search")
+def rag_search(
+    defect_type: str = "Edge-Ring",
+    q: str = "",
+    line_id: str = "LINE-7",
+    k: int = 6,
+) -> dict[str, object]:
+    """Top-k similar past cases for a defect type, optionally refined by keyword."""
+    return browse_cases(defect_type, query=q, line_id=line_id, k=k)
+
+
 @app.get("/api/v1/db/overview")
 def database_overview() -> dict[str, object]:
     """Tables, row counts, and columns of the workflow SQLite DB."""
@@ -319,6 +337,15 @@ def mlops_agent_run(request: MlopsAgentRequest) -> dict[str, object]:
         return run_mlops_agent(line_id=request.line_id, use_llm=request.use_llm, autonomy=request.autonomy)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"MLOps agent run failed: {exc}") from exc
+
+
+@app.get("/api/v1/mlops/agent/traces")
+def mlops_agent_traces(limit: int = 20) -> list[dict[str, object]]:
+    """Recent MLOps-agent runs for the monitoring log — includes delegation-triggered
+    runs (when the inspection agent escalated), which don't originate in the UI."""
+    from app.services.storage import list_mlops_agent_traces  # noqa: PLC0415
+
+    return list_mlops_agent_traces(limit=limit)
 
 
 @app.post("/api/v1/mlops/agent/run/stream")

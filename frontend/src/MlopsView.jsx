@@ -154,7 +154,8 @@ export default function MlopsView() {
         fetch(`${API_BASE}/api/v1/pending-approvals?status=pending`).then(r => r.ok ? r.json() : []),
       ]);
       if (s) setState(s);
-      setApprovals(Array.isArray(a) ? a : []);
+      // MLOps 승인 대기는 모델/재학습 승인만 — 검사 단위 알림은 여기 표시하지 않음
+      setApprovals(Array.isArray(a) ? a.filter(x => x.tool_name === "recommend_retrain") : []);
     } catch { /* keep last */ }
   }, []);
 

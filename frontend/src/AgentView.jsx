@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Icon, Panel, Metric, RiskBadge, RiskGauge, Modal, Markdown, ToolCalls } from "./lib";
+import { Icon, Panel, Metric, RiskBadge, RiskGauge, Modal, Markdown, ToolCalls, TOOL_META } from "./lib";
 import { useStream } from "./SettingsContext";
 import { useDefectChat } from "./DefectChatContext";
 
@@ -215,6 +215,58 @@ function CauseCard({ idx, cause, onEvidence }) {
   );
 }
 
+/* ---------- multi-agent handoff: visualize escalate_to_mlops in the trace ---------- */
+
+function DelegationFlow({ calls }) {
+  const escs = (calls || []).filter(c => c.name === "escalate_to_mlops" && c.result && typeof c.result === "object");
+  if (escs.length === 0) return null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {escs.map((c, i) => {
+        const r = c.result || {};
+        const reason = r.reason || c.args?.reason || "";
+        const tools = r.mlops_tools_used || [];
+        const decision = (r.mlops_decision || "").trim();
+        return (
+          <div key={i} className="panel-inset" style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 9, border: "1px solid var(--accent-line)" }}>
+            {/* handoff header: 검사 에이전트 → MLOps 에이전트 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
+              <span className="chip" style={{ fontSize: 8.5, color: "var(--accent)", borderColor: "var(--accent-line)" }}>멀티에이전트 위임</span>
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600, color: "var(--text)" }}>
+                <Icon name="bot" size={12} style={{ color: "var(--accent)" }} />검사 에이전트
+                <Icon name="handoff" size={14} style={{ color: "var(--text-3)" }} />
+                <Icon name="box" size={12} style={{ color: "var(--med)" }} />MLOps 에이전트
+              </span>
+            </div>
+            {reason && <div style={{ fontSize: 11, color: "var(--text-2)", lineHeight: 1.5 }}>위임 사유: {reason}</div>}
+            {tools.length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
+                <span className="label-cap">MLOps가 조회한 도구</span>
+                {tools.map((t, j) => {
+                  const meta = TOOL_META[t] || { icon: "cpu", label: t };
+                  return (
+                    <span key={j} className="chip" style={{ fontSize: 9, color: "var(--text-2)" }}>
+                      <Icon name={meta.icon} size={10} />{meta.label}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+            {decision && (
+              <div>
+                <div className="label-cap" style={{ marginBottom: 4 }}>MLOps 에이전트 판단</div>
+                <div style={{ fontSize: 11.5, color: "var(--text)", lineHeight: 1.6, background: "var(--panel-2)", borderRadius: 7, padding: "8px 10px" }}>
+                  <Markdown text={decision} />
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ---------- agent analysis bubble (the agent's core judgment, in the chat) ----------
    Renders only the essentials — probable causes (%) and recommended next actions —
    as the opening assistant message. Each item is clickable to inspect the evidence
@@ -280,6 +332,9 @@ function AgentAnalysisBubble({
               onExecute={onExecute} onEvidence={onEvidence}
               reviewResult={reviewResult} reviewNote={reviewNote} />
           </div>
+
+          {/* multi-agent handoff (검사 → MLOps), surfaced when the agent escalated */}
+          <DelegationFlow calls={agentRun.displayTools} />
         </>
       )}
 

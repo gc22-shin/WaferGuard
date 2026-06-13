@@ -153,6 +153,20 @@ def init_db() -> None:
             """
         )
     seed_model_registry()
+    cleanup_legacy_retraining_jobs()
+
+
+def cleanup_legacy_retraining_jobs() -> None:
+    """Drop retraining-history rows that name the old ``wg-local-v<timestamp>`` models.
+
+    The registry reseed already removed those models; this clears the matching
+    entries from the retraining history (and the alerts that announced them) so the
+    MLOps console no longer shows the legacy timestamp names. Idempotent — new jobs
+    use the wafer-defectnet lineage and are never matched.
+    """
+    with connect() as conn:
+        conn.execute("DELETE FROM retraining_jobs WHERE candidate_version LIKE 'wg-local-v%'")
+        conn.execute("DELETE FROM alerts WHERE content LIKE '%wg-local-v%'")
 
 
 # A small, realistic baseline registry: one Production model with a few archived
@@ -713,6 +727,38 @@ def insert_agent_trace(inspection_id: str, trace: dict) -> str:
     return trace_id
 
 
+def list_mlops_agent_traces(limit: int = 20) -> list[dict]:
+    """Recent MLOps-agent runs (trace_key starts with 'MLOPS-'), newest first.
+
+    Returns lightweight rows (no full message history) for the monitoring log —
+    including the ``trigger`` so the UI can flag delegation-initiated runs.
+    """
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM agent_traces WHERE inspection_id LIKE 'MLOPS-%' ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    out: list[dict] = []
+    for row in rows:
+        try:
+            trace = json.loads(row["trace_json"])
+        except Exception:  # noqa: BLE001
+            continue
+        out.append(
+            {
+                "trace_id": row["id"],
+                "created_at": row["created_at"],
+                "final_action": trace.get("final_action"),
+                "tool_calls": trace.get("tool_calls", []),
+                "agent_mode": trace.get("agent_mode"),
+                "trigger": trace.get("trigger", "manual"),
+                "source": trace.get("source"),
+                "autonomy": trace.get("autonomy"),
+            }
+        )
+    return out
+
+
 def get_agent_trace_for_inspection(inspection_id: str) -> dict | None:
     with connect() as conn:
         row = conn.execute(
@@ -805,6 +851,15 @@ def count_rag_documents() -> int:
     """Number of indexed RAG documents (used to decide whether to seed)."""
     with connect() as conn:
         return conn.execute("SELECT COUNT(*) AS c FROM rag_documents").fetchone()["c"]
+
+
+def rag_type_counts() -> dict[str, int]:
+    """Indexed RAG document counts grouped by defect_type (for the data view)."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT defect_type, COUNT(*) AS c FROM rag_documents GROUP BY defect_type"
+        ).fetchall()
+    return {(r["defect_type"] or "기타"): r["c"] for r in rows}
 
 
 def recent_human_feedback(
