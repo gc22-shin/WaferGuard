@@ -11,3 +11,5 @@ frontend/.vite/
 .DS_Store
 LSWMD.pkl
 .claude/
+CLAUDE.md
+CONTEXT.md
