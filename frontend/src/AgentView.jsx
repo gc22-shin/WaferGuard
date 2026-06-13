@@ -20,6 +20,17 @@ const DECISION_LABEL = {
 
 const CAUSE_CONF = [0.42, 0.27, 0.15, 0.10];
 
+// queue status filters — "조치 대기"는 아직 판단이 없는 케이스
+const QUEUE_FILTERS = [
+  { id: "all",          label: "전체" },
+  { id: "pending",      label: "조치 대기" },
+  { id: "needs_review", label: "추가 리뷰" },
+  { id: "approved",     label: "조치 완료" },
+  { id: "false_alarm",  label: "오탐" },
+];
+const matchesFilter = (row, f) =>
+  f === "all" ? true : f === "pending" ? !row.engineer_decision : row.engineer_decision === f;
+
 /* ---------- queue ---------- */
 
 function QueueRow({ row, active, onSelect }) {
@@ -203,18 +214,91 @@ function CauseCard({ idx, cause, onEvidence }) {
   );
 }
 
-/* ---------- chat ---------- */
+/* ---------- agent analysis bubble (the agent's core judgment, in the chat) ----------
+   Renders only the essentials — probable causes (%) and recommended next actions —
+   as the opening assistant message. Each item is clickable to inspect the evidence
+   it was reasoned from, and the full tool-by-tool reasoning sits behind a toggle. */
 
-function DefectChat({ inspectionId, llmOn, causes, actions }) {
+function AgentAnalysisBubble({
+  causes, actions, decided, busy, onExecute, onEvidence,
+  reviewResult, reviewNote, agentRun, llmOn, traceLoading, mode,
+}) {
+  const [showReasoning, setShowReasoning] = useState(false);
+  const hasReasoning = llmOn && (agentRun.displayTools.length > 0 || agentRun.displayText || agentRun.running);
+
+  return (
+    <div style={{
+      alignSelf: "stretch", background: "var(--panel-2)", border: "1px solid var(--border-soft)",
+      borderRadius: 12, padding: "11px 13px", display: "flex", flexDirection: "column", gap: 11,
+    }}>
+      {/* header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+        <Icon name="bot" size={14} style={{ color: "var(--accent)" }} />
+        <span style={{ fontSize: 12, fontWeight: 650, color: "var(--text)" }}>에이전트 판단</span>
+        <span className="chip" style={{ fontSize: 8.5, color: mode.color, borderColor: mode.color }}>{mode.label}</span>
+        <button onClick={agentRun.run} disabled={agentRun.running || !llmOn} className="btn btn-ghost"
+          title="에이전트 다시 실행" style={{ marginLeft: "auto", padding: "2px 8px", fontSize: 10, gap: 5 }}>
+          <Icon name="refresh" size={11} style={agentRun.running ? { animation: "spin 1s linear infinite" } : undefined} />
+          {agentRun.runLabel}
+        </button>
+      </div>
+
+      {/* 추정 원인 — % UI, click 근거 to inspect */}
+      <div>
+        <div className="label-cap" style={{ marginBottom: 6 }}>추정 원인 · Probable Causes</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          {causes.map((c, i) => <CauseCard key={i} idx={i} cause={c} onEvidence={onEvidence} />)}
+          {causes.length === 0 && <span style={{ fontSize: 11, color: "var(--text-3)" }}>추정 원인이 아직 없습니다.</span>}
+        </div>
+      </div>
+
+      {/* 권장 다음 액션 — select / write your own → record + RAG write-back */}
+      <div>
+        <div className="label-cap" style={{ marginBottom: 6 }}>권장 다음 액션 · Next Actions</div>
+        <ActionSelector actions={actions} decided={decided} busy={busy}
+          onExecute={onExecute} onEvidence={onEvidence}
+          reviewResult={reviewResult} reviewNote={reviewNote} />
+      </div>
+
+      {/* full reasoning — collapsed by default, click to verify how the agent judged */}
+      {hasReasoning && (
+        <div style={{ borderTop: "1px solid var(--border-soft)", paddingTop: 8 }}>
+          <button onClick={() => setShowReasoning(s => !s)} className="focusable"
+            style={{
+              display: "flex", alignItems: "center", gap: 5, background: "transparent", border: "none",
+              cursor: "pointer", font: "inherit", fontSize: 10.5, color: "var(--text-3)", padding: 0,
+            }}>
+            <Icon name={showReasoning ? "chevD" : "chevR"} size={11} />
+            판단 근거 · 분석 과정{agentRun.running ? " (실행 중…)" : ""}
+          </button>
+          {showReasoning && (
+            <div style={{ marginTop: 8 }}>
+              <AgentRunBody state={agentRun} llmOn={llmOn} traceLoading={traceLoading} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------- agent chat (the single unified surface) ----------
+   The agent's judgment is the opening message; the operator converses below it. */
+
+function AgentChat({
+  inspectionId, llmOn, causes, actions, decided, busy,
+  onExecute, onEvidence, reviewResult, reviewNote, agentRun, traceLoading, mode,
+}) {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [sending, setSending] = useState(false);
   const scrollRef = useRef(null);
 
   useEffect(() => { setMsgs([]); setInput(""); }, [inspectionId]);
+  // keep the analysis card in view on open; only follow the conversation once it starts
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [msgs, busy]);
+    if (msgs.length > 0 && scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [msgs, sending]);
 
   // update the last (assistant) message immutably
   const patchLast = (fn) => setMsgs(m => {
@@ -242,8 +326,7 @@ function DefectChat({ inspectionId, llmOn, causes, actions }) {
     }
   }
 
-  // pass the on-screen probable causes / next actions into the chat context so
-  // the assistant references exactly what the engineer is looking at
+  // ground the chat in exactly what the engineer is looking at
   function buildExtraContext() {
     const lines = [];
     if (causes?.length) {
@@ -257,21 +340,21 @@ function DefectChat({ inspectionId, llmOn, causes, actions }) {
     return lines.join("\n");
   }
 
-  async function send() {
-    const text = input.trim();
-    if (!text || busy || !inspectionId || !llmOn) return;
+  async function send(text) {
+    const q = (text ?? input).trim();
+    if (!q || sending || !inspectionId || !llmOn) return;
     const history = msgs.map(m => ({ role: m.role, content: m.content }));
     setMsgs(m => [...m,
-      { role: "user", content: text },
+      { role: "user", content: q },
       { role: "assistant", content: "", tools: [], streaming: true },
     ]);
     setInput("");
-    setBusy(true);
+    setSending(true);
     try {
       const res = await fetch(`${API_BASE}/api/v1/inspect/${inspectionId}/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history, use_llm: llmOn, extra_context: buildExtraContext() }),
+        body: JSON.stringify({ message: q, history, use_llm: llmOn, extra_context: buildExtraContext() }),
       });
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       const reader = res.body.getReader();
@@ -293,32 +376,42 @@ function DefectChat({ inspectionId, llmOn, causes, actions }) {
       patchLast(a => ({ ...a, content: `오류: 응답을 받지 못했습니다 (${e.message})`, streaming: false }));
     } finally {
       patchLast(a => ({ ...a, streaming: false }));
-      setBusy(false);
+      setSending(false);
     }
   }
 
+  const SUGGESTIONS = ["그래서 뭐부터 해야 돼?", "이 설비에서 최근에도 이랬어?", "계속 밀리는 추세야?"];
+
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <Icon name="bot" size={13} style={{ color: "var(--accent)" }} />
-        <span className="label-cap">결함 Q&A · Defect Chat</span>
-        <span className="chip" style={{ fontSize: 9, color: "var(--accent)", borderColor: "var(--accent-line)" }}>툴 사용 에이전트</span>
-        {!llmOn && <span className="chip" style={{ fontSize: 9, color: "var(--med)", borderColor: "var(--med)" }}>LLM 꺼짐</span>}
-      </div>
-      <div style={{ border: "1px solid var(--border-soft)", borderRadius: 9, overflow: "hidden" }}>
-      <div ref={scrollRef} style={{ height: 210, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
-        {msgs.length === 0 && (
-          <div style={{ margin: "auto", textAlign: "center", fontSize: 11.5, color: "var(--text-3)", lineHeight: 1.7 }}>
-            {llmOn ? (
-              <>
-                이 결함에 대해 무엇이든 질문하세요. 에이전트가 설비 이력·계측 추세를 직접 조회합니다.<br />
-                예: <span className="mono" style={{ fontSize: 10.5 }}>"이 설비에서 같은 결함 최근에도 났어?"</span>
-              </>
-            ) : (
-              <>설정에서 LLM 호출이 꺼져 있어 채팅을 사용할 수 없습니다.<br />설정 탭의 'Agent LLM 분석'을 켜주세요.</>
-            )}
+      <div ref={scrollRef} style={{ maxHeight: 560, minHeight: 320, overflowY: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: 9 }}>
+        {/* opening message: the agent's core judgment */}
+        <AgentAnalysisBubble
+          causes={causes} actions={actions} decided={decided} busy={busy}
+          onExecute={onExecute} onEvidence={onEvidence}
+          reviewResult={reviewResult} reviewNote={reviewNote}
+          agentRun={agentRun} llmOn={llmOn} traceLoading={traceLoading} mode={mode} />
+
+        {/* quick follow-up prompts, shown until the conversation starts */}
+        {msgs.length === 0 && llmOn && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "2px 1px" }}>
+            {SUGGESTIONS.map(s => (
+              <button key={s} onClick={() => send(s)} disabled={sending} className="focusable"
+                style={{
+                  fontSize: 10.5, padding: "4px 9px", borderRadius: 99, cursor: "pointer", font: "inherit",
+                  border: "1px solid var(--border-soft)", background: "var(--panel)", color: "var(--text-2)",
+                }}>
+                {s}
+              </button>
+            ))}
           </div>
         )}
+        {msgs.length === 0 && !llmOn && (
+          <div style={{ fontSize: 11, color: "var(--text-3)", lineHeight: 1.6, padding: "2px 1px" }}>
+            설정 탭의 'Agent LLM 분석'을 켜면 이 판단에 대해 추가 질문을 할 수 있습니다.
+          </div>
+        )}
+
         {msgs.map((m, i) => {
           const isUser = m.role === "user";
           const hasTools = !isUser && m.tools && m.tools.length > 0;
@@ -353,17 +446,16 @@ function DefectChat({ inspectionId, llmOn, causes, actions }) {
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing) send(); }}
-          placeholder={llmOn ? "이 결함에 대해 질문 입력…" : "LLM이 꺼져 있어 채팅 불가"}
+          placeholder={llmOn ? "이 판단에 대해 질문하거나 다른 조치를 물어보세요…" : "LLM이 꺼져 있어 채팅 불가"}
           disabled={!llmOn}
           style={{
             flex: 1, background: "var(--panel-2)", border: "1px solid var(--border-strong)",
             borderRadius: 7, padding: "8px 11px", color: "var(--text)", font: "inherit", fontSize: 12,
             opacity: llmOn ? 1 : .55,
           }} />
-        <button className="btn btn-accent" onClick={send} disabled={busy || !input.trim() || !llmOn}>
+        <button className="btn btn-accent" onClick={() => send()} disabled={sending || !input.trim() || !llmOn}>
           <Icon name="send" size={13} />전송
         </button>
-      </div>
       </div>
     </div>
   );
@@ -620,6 +712,7 @@ export default function AgentView({ focusId, onFocusHandled }) {
   const [traceLoading, setTraceLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [evidence, setEvidence] = useState(null);
+  const [queueFilter, setQueueFilter] = useState("all");
   // result of the last review POST — carries knowledge_saved so we can confirm
   // the case was written into the RAG corpus
   const [reviewResult, setReviewResult] = useState(null);
@@ -701,6 +794,7 @@ export default function AgentView({ focusId, onFocusHandled }) {
   const selected = rows.find(r => r.id === selectedId) || null;
   const decided = !!selected?.engineer_decision;
   const pending = rows.filter(r => !r.engineer_decision).length;
+  const visibleRows = rows.filter(r => matchesFilter(r, queueFilter));
   const mode = trace
     ? (MODE_CHIP[trace.agent_mode] || MODE_CHIP.rule_only)
     : (traceLoading ? MODE_CHIP.pending : MODE_CHIP.rule_only);
@@ -735,13 +829,35 @@ export default function AgentView({ focusId, onFocusHandled }) {
           right={<span className="chip" style={{ fontSize: 9.5, color: pending ? "var(--med)" : "var(--low)", borderColor: pending ? "var(--med)" : "var(--low)" }}>대기 {pending}</span>}>
           <div style={{ display: "grid", gridTemplateRows: showList ? "1fr" : "0fr", transition: "grid-template-rows .45s ease" }}>
             <div style={{ overflow: "hidden" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 480, overflowY: "auto" }}>
-                {rows.length === 0 && (
+              {/* status filters */}
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4, padding: "2px 2px 8px" }}>
+                {QUEUE_FILTERS.map(f => {
+                  const n = rows.filter(r => matchesFilter(r, f.id)).length;
+                  const on = queueFilter === f.id;
+                  return (
+                    <button key={f.id} onClick={() => setQueueFilter(f.id)} className="focusable"
+                      style={{
+                        display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 8px", borderRadius: 99,
+                        cursor: "pointer", font: "inherit", fontSize: 10,
+                        border: `1px solid ${on ? "var(--accent-line)" : "var(--border-soft)"}`,
+                        background: on ? "var(--accent-dim)" : "transparent",
+                        color: on ? "var(--accent)" : "var(--text-3)", fontWeight: on ? 650 : 500,
+                      }}>
+                      {f.label}
+                      <span className="mono" style={{ fontSize: 9, opacity: .8 }}>{n}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 452, overflowY: "auto" }}>
+                {visibleRows.length === 0 && (
                   <div style={{ padding: "26px 12px", textAlign: "center", fontSize: 11.5, color: "var(--text-3)" }}>
-                    Medium/High 리스크 검사가 아직 없습니다.
+                    {rows.length === 0
+                      ? "Medium/High 리스크 검사가 아직 없습니다."
+                      : "이 필터에 해당하는 검사가 없습니다."}
                   </div>
                 )}
-                {rows.map(r => (
+                {visibleRows.map(r => (
                   <QueueRow key={r.id} row={r} active={r.id === selectedId} onSelect={selectRow} />
                 ))}
               </div>
@@ -836,51 +952,25 @@ export default function AgentView({ focusId, onFocusHandled }) {
         </Panel>
       ) : (
       <div key={selected.id} className="fade-in" style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}>
-              {/* Unified Agent surface: run record → estimated causes (%) → response action → Q&A */}
-              <Panel title="검사 에이전트 · Inspection Agent" icon="bot" dense
-                right={
-                  <button className="btn btn-accent" onClick={agentRun.run}
-                    disabled={agentRun.running || !settings.useLlm || !selected.id}
-                    style={{ fontSize: 11, padding: "4px 10px" }}>
-                    {agentRun.running
-                      ? <Icon name="refresh" size={12} style={{ animation: "spin 1s linear infinite" }} />
-                      : <Icon name="play" size={12} />}
-                    {agentRun.runLabel}
-                  </button>
-                }>
-                {/* 1) 에이전트 실행 기록 */}
-                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 7 }}>
-                  <span className="label-cap">에이전트 실행 기록 · Agent Run</span>
-                  <span className="chip" style={{ fontSize: 9, color: mode.color, borderColor: mode.color }}>
-                    <Icon name="bot" size={10} /> {mode.label}
-                  </span>
-                </div>
-                <AgentRunBody state={agentRun} llmOn={settings.useLlm} traceLoading={traceLoading} />
-
-                <div className="divider" style={{ margin: "14px 0" }} />
-
-                {/* 2) 추정 원인 (%)  +  3) 조치 선택 */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1.1fr", gap: 14, alignItems: "start" }}>
-                  <div>
-                    <div className="label-cap" style={{ marginBottom: 6 }}>추정 원인 · Probable Causes</div>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                      {causes.map((c, i) => <CauseCard key={i} idx={i} cause={c} onEvidence={setEvidence} />)}
-                      {causes.length === 0 && <span style={{ fontSize: 11, color: "var(--text-3)" }}>추정 원인이 아직 없습니다.</span>}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="label-cap" style={{ marginBottom: 6 }}>조치 선택 · Response Action</div>
-                    <ActionSelector key={selected.id} actions={actions} decided={decided} busy={busy}
-                      onExecute={executeAction} onEvidence={setEvidence}
-                      reviewResult={reviewResult}
-                      reviewNote={selected.review_note || DECISION_LABEL[selected.engineer_decision]?.label} />
-                  </div>
-                </div>
-
-                <div className="divider" style={{ margin: "14px 0" }} />
-
-                {/* 4) 결함 Q&A */}
-                <DefectChat inspectionId={selected.id} llmOn={settings.useLlm} causes={causes} actions={actions} />
+              {/* One agent surface: its core judgment is the opening chat message,
+                  each item clickable to its evidence, conversation continues below. */}
+              <Panel title="검사 에이전트 · Inspection Agent" icon="bot" dense pad={0}
+                right={<span className="chip" style={{ fontSize: 9, color: "var(--accent)", borderColor: "var(--accent-line)" }}>근거: RAG + 계측 룰</span>}>
+                <AgentChat
+                  inspectionId={selected.id}
+                  llmOn={settings.useLlm}
+                  causes={causes}
+                  actions={actions}
+                  decided={decided}
+                  busy={busy}
+                  onExecute={executeAction}
+                  onEvidence={setEvidence}
+                  reviewResult={reviewResult}
+                  reviewNote={selected.review_note || DECISION_LABEL[selected.engineer_decision]?.label}
+                  agentRun={agentRun}
+                  traceLoading={traceLoading}
+                  mode={mode}
+                />
               </Panel>
       </div>
       )}

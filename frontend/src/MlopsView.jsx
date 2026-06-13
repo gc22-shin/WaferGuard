@@ -1,8 +1,120 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Icon, Panel, Metric, StatusDot } from "./lib";
+import { Icon, Panel, Metric, StatusDot, Modal, ChartFrame } from "./lib";
 import { useStream } from "./SettingsContext";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+
+const DRIFT_INTENSITY = [
+  { id: "normal", label: "정상" },
+  { id: "mild",   label: "경미" },
+  { id: "strong", label: "심각" },
+];
+
+// drift-score trend for the current model — line chart with the detection threshold
+function DriftTrendChart({ events, threshold }) {
+  const data = events || [];
+  if (data.length === 0) {
+    return <div style={{ padding: "30px 0", textAlign: "center", fontSize: 11.5, color: "var(--text-3)" }}>드리프트 이력이 없습니다. 아래에서 시뮬레이션을 실행해보세요.</div>;
+  }
+  const max = Math.max(0.7, ...data.map(d => d.drift_score || 0)) * 1.12;
+  return (
+    <ChartFrame height={180}>{(W, H) => {
+      const padL = 34, padB = 24, padT = 12, padR = 10;
+      const cw = W - padL - padR, ch = H - padB - padT;
+      const X = i => padL + (data.length === 1 ? cw / 2 : (i / (data.length - 1)) * cw);
+      const Y = v => padT + ch - (Math.min(v, max) / max) * ch;
+      const line = data.map((d, i) => `${X(i)},${Y(d.drift_score)}`).join(" ");
+      const yThr = Y(threshold);
+      return (
+        <svg width={W} height={H} className="fade-in">
+          {[0, max / 2, max].map((v, i) => {
+            const y = Y(v);
+            return (<g key={i}>
+              <line x1={padL} x2={W - padR} y1={y} y2={y} stroke="var(--border)" strokeWidth="1" strokeDasharray={i ? "2 4" : ""} />
+              <text x={padL - 6} y={y + 3} textAnchor="end" fontSize="9" fill="var(--text-3)" fontFamily="monospace">{v.toFixed(2)}</text>
+            </g>);
+          })}
+          <line x1={padL} x2={W - padR} y1={yThr} y2={yThr} stroke="var(--high)" strokeWidth="1.3" strokeDasharray="5 3" />
+          <text x={W - padR} y={yThr - 5} textAnchor="end" fontSize="9" fontFamily="monospace" fill="var(--high)" fontWeight="600">임계 {threshold}</text>
+          {data.length > 1 && <polyline points={line} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />}
+          {data.map((d, i) => {
+            const over = (d.drift_score || 0) > threshold;
+            return <circle key={i} cx={X(i)} cy={Y(d.drift_score)} r={i === data.length - 1 ? 3.6 : 2.4}
+              fill={over ? "var(--high)" : "var(--bg)"} stroke={over ? "var(--high)" : "var(--accent)"} strokeWidth="1.6" />;
+          })}
+        </svg>
+      );
+    }}</ChartFrame>
+  );
+}
+
+function DriftTrendModal({ open, onClose, onRanDrift }) {
+  const [data, setData] = useState(null);
+  const [intensity, setIntensity] = useState("mild");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const r = await fetch(`${API_BASE}/api/v1/mlops/drift/history?limit=30`);
+      if (r.ok) setData(await r.json());
+    } catch { /* keep last */ }
+  }, []);
+
+  useEffect(() => { if (open) load(); }, [open, load]);
+
+  async function runDrift() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await fetch(`${API_BASE}/api/v1/mlops/drift`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ intensity, line_id: "LINE-7" }),
+      });
+      await load();
+      onRanDrift && onRanDrift();
+    } finally { setBusy(false); }
+  }
+
+  const prod = data?.production_model;
+  const events = data?.events || [];
+  const latest = events[events.length - 1];
+
+  return (
+    <Modal open={open} onClose={onClose} icon="pulse" title="드리프트 추세 · 현재 모델"
+      right={prod && <span className="chip" style={{ fontSize: 9.5, color: "var(--low)", borderColor: "var(--low)" }}>{prod.version}</span>}>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 10 }}>
+        <Metric label="운영 모델 F1" value={prod?.f1_score ?? "—"} accent="var(--low)" />
+        <Metric label="p95 지연" value={prod?.latency_p95_ms ?? "—"} unit="ms" />
+        <Metric label="최신 드리프트" value={latest ? latest.drift_score : "—"}
+          accent={latest && latest.status === "detected" ? "var(--high)" : "var(--accent)"}
+          sub={latest ? latest.status : "이벤트 없음"} />
+      </div>
+      <DriftTrendChart events={events} threshold={data?.threshold ?? 0.3} />
+      <div className="divider" style={{ margin: "12px 0" }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span className="label-cap">드리프트 시뮬레이션</span>
+        <div style={{ display: "inline-flex", gap: 3, padding: 3, background: "var(--panel-2)", border: "1px solid var(--border-soft)", borderRadius: 8 }}>
+          {DRIFT_INTENSITY.map(o => (
+            <button key={o.id} onClick={() => setIntensity(o.id)} className="focusable"
+              style={{
+                padding: "4px 10px", fontSize: 11, borderRadius: 6, cursor: "pointer", font: "inherit",
+                background: intensity === o.id ? "var(--panel)" : "transparent",
+                color: intensity === o.id ? "var(--accent)" : "var(--text-2)", fontWeight: intensity === o.id ? 650 : 500,
+                border: "1px solid transparent",
+              }}>{o.label}</button>
+          ))}
+        </div>
+        <button className="btn btn-accent" onClick={runDrift} disabled={busy} style={{ marginLeft: "auto", padding: "5px 12px", fontSize: 11.5 }}>
+          <Icon name={busy ? "refresh" : "pulse"} size={12} style={busy ? { animation: "spin 1s linear infinite" } : undefined} />
+          드리프트 측정
+        </button>
+      </div>
+      <div style={{ fontSize: 10.5, color: "var(--text-3)", marginTop: 8, lineHeight: 1.5 }}>
+        임계({data?.threshold ?? 0.3})를 넘으면 드리프트로 감지되어 알림이 발생합니다. 재학습은 자동 실행되지 않고, MLOps 에이전트/엔지니어가 승인 후 한 번만 진행합니다.
+      </div>
+    </Modal>
+  );
+}
 
 const STAGE_META = {
   Production: { c: "var(--low)",    t: "PRODUCTION" },
@@ -31,6 +143,7 @@ export default function MlopsView() {
   const [approvals, setApprovals] = useState([]);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState(null);
+  const [driftOpen, setDriftOpen] = useState(false);
 
   const flash = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
 
@@ -92,6 +205,7 @@ export default function MlopsView() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <DriftTrendModal open={driftOpen} onClose={() => setDriftOpen(false)} onRanDrift={() => { flash("드리프트 측정 완료"); load(); }} />
       {toast && (
         <div className="toast-in" style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 50,
           background: "var(--panel-3)", border: "1px solid var(--accent-line)", color: "var(--text)", padding: "10px 16px",
@@ -104,9 +218,14 @@ export default function MlopsView() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
         <Panel dense pad={13}><Metric label="Production 모델" value={prod?.version || "—"} accent="var(--low)" mono={false}
           sub={prod ? `F1 ${prod.f1_score} · p95 ${prod.latency_p95_ms}ms` : "없음"} /></Panel>
-        <Panel dense pad={13}><Metric label="최신 드리프트" value={drift ? drift.drift_score : "—"}
-          accent={drift?.status === "detected" ? "var(--high)" : "var(--accent)"}
-          sub={drift ? `${drift.status} · ${ts(drift.created_at)}` : "이벤트 없음"} /></Panel>
+        <Panel dense pad={0}>
+          <button onClick={() => setDriftOpen(true)} className="focusable" title="드리프트 추세·현재 모델 그래프 보기"
+            style={{ display: "block", width: "100%", textAlign: "left", padding: 13, background: "transparent", border: "none", cursor: "pointer", font: "inherit", borderRadius: 10 }}>
+            <Metric label="최신 드리프트 · 그래프 보기" value={drift ? drift.drift_score : "—"}
+              accent={drift?.status === "detected" ? "var(--high)" : "var(--accent)"}
+              sub={drift ? `${drift.status} · ${ts(drift.created_at)}` : "이벤트 없음 · 클릭"} />
+          </button>
+        </Panel>
         <Panel dense pad={13}><Metric label="재학습 잡 (최근)" value={jobs.length} accent="var(--amber)"
           sub={jobs[0] ? jobs[0].candidate_version : "없음"} /></Panel>
         <Panel dense pad={13}><Metric label="승인 대기" value={approvals.length}

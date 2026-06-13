@@ -237,6 +237,28 @@ def execute_retrain_decision(reason: str, mode: str = "approval") -> dict:
     """
     storage = _get_storage()
 
+    # You can only train one model at a time, so don't stack up retrain work.
+    # If a candidate is already in Staging (trained, awaiting promotion), or an
+    # approval is already queued, fold into that instead of starting another.
+    if storage is not None:
+        try:
+            staging = next((m for m in storage.current_models() if m.get("stage") == "Staging"), None)
+        except Exception:  # noqa: BLE001
+            staging = None
+        if staging is not None:
+            return {
+                "ok": True,
+                "mode": mode,
+                "executed": False,
+                "skipped": True,
+                "candidate_version": staging.get("version"),
+                "f1_score": staging.get("f1_score"),
+                "message": (
+                    f"이미 학습된 후보 {staging.get('version')}가 Staging에 있습니다. "
+                    "한 번에 하나만 학습할 수 있으니 먼저 승급 또는 거절하세요."
+                ),
+            }
+
     if mode == "auto":
         # Fully autonomous: run the retraining simulation right away.
         try:
@@ -281,6 +303,20 @@ def execute_retrain_decision(reason: str, mode: str = "approval") -> dict:
     # default: approval-gated
     approval_id: str | None = None
     if storage is not None:
+        # dedupe: if a retrain approval is already pending, fold into it
+        try:
+            existing = storage.pending_approval_for_tool("recommend_retrain")
+        except Exception:  # noqa: BLE001
+            existing = None
+        if existing is not None:
+            return {
+                "ok": True,
+                "mode": "approval",
+                "approval_id": existing.get("id"),
+                "status": "pending",
+                "deduped": True,
+                "message": "이미 재학습 승인 요청이 대기 중입니다. 중복 권고는 기존 요청으로 합쳐집니다.",
+            }
         try:
             insert_pending_approval = getattr(storage, "insert_pending_approval", None)
             if insert_pending_approval is not None:

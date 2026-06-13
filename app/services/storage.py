@@ -152,15 +152,44 @@ def init_db() -> None:
             WHERE schedule_key IS NOT NULL
             """
         )
-        count = conn.execute("SELECT COUNT(*) AS count FROM model_registry").fetchone()["count"]
-        if count == 0:
-            conn.execute(
-                """
-                INSERT INTO model_registry (version, stage, f1_score, latency_p95_ms, registered_at)
-                VALUES (?, 'Production', 0.872, 84, ?)
-                """,
-                (MODEL_VERSION, utc_now()),
-            )
+    seed_model_registry()
+
+
+# A small, realistic baseline registry: one Production model with a few archived
+# predecessors. Retraining adds Staging candidates on top of this lineage instead
+# of minting a new timestamp-named model on every drift tick.
+_BASELINE_MODELS = [
+    # version,                     stage,        f1,    p95, registered_at (backdated)
+    ("wafer-defectnet-v2.3.1", "Production", 0.901, 78, "2026-05-20T09:12:00+00:00"),
+    ("wafer-defectnet-v2.2.0", "Archived",   0.887, 82, "2026-03-08T14:03:00+00:00"),
+    ("wafer-defectnet-v2.1.0", "Archived",   0.871, 86, "2026-01-15T10:40:00+00:00"),
+    ("wafer-defectnet-v2.0.0", "Archived",   0.844, 91, "2025-11-02T08:25:00+00:00"),
+]
+
+
+def seed_model_registry() -> None:
+    """Ensure the registry holds the realistic baseline lineage.
+
+    Runs once: if the baseline Production model is already present, do nothing.
+    Otherwise reset the registry to the baseline — this also cleans up the legacy
+    ``wg-local-v<timestamp>`` models that the old drift→auto-retrain loop minted on
+    every tick, which is what made the registry balloon.
+    """
+    baseline_prod = _BASELINE_MODELS[0][0]
+    with connect() as conn:
+        have = conn.execute(
+            "SELECT COUNT(*) AS c FROM model_registry WHERE version = ?", (baseline_prod,)
+        ).fetchone()["c"]
+        if have:
+            return
+        conn.execute("DELETE FROM model_registry")
+        conn.executemany(
+            """
+            INSERT INTO model_registry (version, stage, f1_score, latency_p95_ms, registered_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            _BASELINE_MODELS,
+        )
 
 
 def insert_inspection(record: dict[str, object]) -> None:
@@ -455,6 +484,15 @@ def insert_drift_event(event: dict[str, object]) -> None:
         )
 
 
+def list_drift_events(limit: int = 30) -> list[dict[str, object]]:
+    """Recent drift events, newest first (used by the drift-trend chart)."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM drift_events ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
 def insert_retraining_job(job: dict[str, object]) -> None:
     with connect() as conn:
         conn.execute(
@@ -730,6 +768,19 @@ def list_pending_approvals(status: str = "pending") -> list[dict]:
         d["payload"] = json.loads(d.pop("payload_json", "{}"))
         result.append(d)
     return result
+
+
+def pending_approval_for_tool(tool_name: str) -> dict | None:
+    """The oldest still-pending approval for a given tool, or None.
+
+    Used to dedupe agent recommendations: you can't train several models at once,
+    so a second ``recommend_retrain`` should fold into the one already queued
+    rather than stacking up another approval card.
+    """
+    for row in list_pending_approvals("pending"):
+        if row.get("tool_name") == tool_name:
+            return row
+    return None
 
 
 def resolve_approval(approval_id: str, status: str) -> dict | None:

@@ -295,6 +295,20 @@ def mlops_state() -> dict[str, object]:
     return pipeline_state()
 
 
+@app.get("/api/v1/mlops/drift/history")
+def mlops_drift_history(limit: int = 30) -> dict[str, object]:
+    """Recent drift-score history + current Production model, for the drift chart."""
+    from app.services.config import DRIFT_THRESHOLD  # noqa: PLC0415
+    from app.services.storage import list_drift_events, production_model  # noqa: PLC0415
+
+    events = list(reversed(list_drift_events(limit=limit)))  # oldest → newest for plotting
+    return {
+        "events": events,
+        "threshold": DRIFT_THRESHOLD,
+        "production_model": production_model(),
+    }
+
+
 @app.post("/api/v1/mlops/agent/run")
 def mlops_agent_run(request: MlopsAgentRequest) -> dict[str, object]:
     """Run the fleet-level MLOps agent: it inspects model performance + drift via

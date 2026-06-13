@@ -135,28 +135,31 @@ function MetrologyTable({ rows }) {
   );
 }
 
-function AgentNudge({ insp, onOpenAgent }) {
-  const high = insp.riskLevel === "High";
-  if (!high && insp.riskLevel !== "Medium") return null;
+// transient bottom-right nudge: pops when a Medium/High inspection lands, then fades
+function AgentNudgeToast({ data, onGo, onClose }) {
+  const high = data.level === "High";
   const c = high ? "var(--high)" : "var(--med)";
-  const bg = high ? "var(--high-dim)" : "var(--med-dim)";
   return (
-    <div className="fade-in" style={{
-      display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
-      borderRadius: 9, background: bg, border: `1px solid ${c}`,
-    }}>
-      <span className="pulse-high" style={{ width: 9, height: 9, borderRadius: 99, background: c, flex: "none", boxShadow: `0 0 8px ${c}` }} />
-      <RiskBadge level={insp.riskLevel} />
-      <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: "var(--text)", lineHeight: 1.5 }}>
-        <strong>{high ? "High 리스크 검사입니다." : "Medium 리스크 — 검토가 필요합니다."}</strong>{" "}
-        <span style={{ color: "var(--text-2)" }}>
-          {insp.defectType} · {insp.wafer} — 검사 에이전트에서 추정 원인과 권장 액션을 확인하세요.
-        </span>
+    <div className="toast-in" style={{ position: "fixed", bottom: 18, right: 18, zIndex: 200, width: 320 }}>
+      <div style={{
+        display: "flex", flexDirection: "column", gap: 9, padding: "12px 14px",
+        background: "var(--panel)", border: `1px solid ${c}`, borderRadius: 10, boxShadow: "var(--shadow)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="pulse-high" style={{ width: 8, height: 8, borderRadius: 99, background: c, flex: "none", boxShadow: `0 0 8px ${c}` }} />
+          <RiskBadge level={data.level} />
+          <span className="mono" style={{ fontSize: 11, color: "var(--text)", fontWeight: 600 }}>{data.wafer}</span>
+          <span style={{ fontSize: 11, color: "var(--text-2)" }}>{data.defect}</span>
+          <button className="btn btn-ghost" onClick={onClose} aria-label="닫기"
+            style={{ marginLeft: "auto", padding: "3px 6px" }}><Icon name="x" size={13} /></button>
+        </div>
+        <div style={{ fontSize: 11.5, color: "var(--text-2)", lineHeight: 1.5 }}>
+          {high ? "High" : "Medium"} 리스크 검사입니다. 검사 에이전트에서 추정 원인·권장 액션을 확인하세요.
+        </div>
+        <button className="btn btn-accent" onClick={onGo} style={{ alignSelf: "flex-start", padding: "5px 12px", fontSize: 11.5, gap: 6 }}>
+          <Icon name="bot" size={13} />검사 에이전트에서 확인
+        </button>
       </div>
-      <button className="btn btn-accent" onClick={() => onOpenAgent && onOpenAgent(insp.inspectionId)}
-        disabled={!insp.inspectionId} style={{ flex: "none", gap: 6 }}>
-        <Icon name="bot" size={14} />검사 에이전트에서 확인
-      </button>
     </div>
   );
 }
@@ -166,6 +169,23 @@ export default function InspectionView({ onOpenAgent }) {
   const [insp, setInsp]         = useState(defaultInspection);
   const [scanning, setScanning] = useState(false);
   const scanTimer = useRef(null);
+  const [nudge, setNudge]       = useState(null);
+  const lastNudgeTick = useRef(null);
+  const nudgeTimer = useRef(null);
+
+  // pop a transient toast when a fresh Medium/High inspection arrives
+  useEffect(() => {
+    if (!latest) return;
+    if (lastNudgeTick.current === null) { lastNudgeTick.current = tick; return; } // skip first paint
+    if (tick === lastNudgeTick.current) return;
+    lastNudgeTick.current = tick;
+    if (latest.risk_level === "High" || latest.risk_level === "Medium") {
+      setNudge({ id: latest.id, level: latest.risk_level, wafer: latest.wafer_id || "W?", defect: latest.defect_type || "결함" });
+      clearTimeout(nudgeTimer.current);
+      nudgeTimer.current = setTimeout(() => setNudge(null), 6000);
+    }
+  }, [tick, latest]);
+  useEffect(() => () => clearTimeout(nudgeTimer.current), []);
 
   useEffect(() => {
     if (!latest) return;
@@ -212,7 +232,11 @@ export default function InspectionView({ onOpenAgent }) {
         </div>
       </div>
 
-      <AgentNudge insp={insp} onOpenAgent={onOpenAgent} />
+      {nudge && (
+        <AgentNudgeToast data={nudge}
+          onGo={() => { onOpenAgent && onOpenAgent(nudge.id); setNudge(null); }}
+          onClose={() => setNudge(null)} />
+      )}
 
       {/* main grid — imagery and metrology split 50/50 */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "start" }}>
