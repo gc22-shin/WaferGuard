@@ -129,6 +129,13 @@ body {
   background: var(--panel-3); border: 1px solid var(--border-soft); color: var(--accent);
 }
 
+.tool-result {
+  margin: 4px 0 2px; padding: 8px 10px; max-height: 220px; overflow: auto;
+  background: var(--panel-3); border: 1px solid var(--border-soft); border-radius: 7px;
+  font-family: "JetBrains Mono", ui-monospace, monospace; font-size: 10px; line-height: 1.5;
+  color: var(--text-2); white-space: pre-wrap; word-break: break-word;
+}
+
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);

@@ -224,17 +224,62 @@ def trigger_critical_alert(inspection_id: str, message: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Tool 5: recommend_retrain
+# Tool 5: recommend_retrain  (autonomy-aware)
 # ---------------------------------------------------------------------------
 
-def recommend_retrain(reason: str) -> dict:
-    """
-    Insert a pending approval record for a retraining recommendation.
-    Requires human approval before retraining is triggered.
+def execute_retrain_decision(reason: str, mode: str = "approval") -> dict:
+    """Carry out a retraining recommendation according to the agent's autonomy mode.
+
+    mode:
+      - "auto"     : execute the retraining immediately (no human gate).
+      - "approval" : register a pending approval; a human must approve to execute.
+      - "notify"   : send a notification only — no execution, no approval queue.
     """
     storage = _get_storage()
-    approval_id: str | None = None
 
+    if mode == "auto":
+        # Fully autonomous: run the retraining simulation right away.
+        try:
+            from app.services.mlops import simulate_retraining  # noqa: PLC0415
+            from app.services.schemas import RetrainRequest  # noqa: PLC0415
+
+            job = simulate_retraining(RetrainRequest(trigger_type="drift"))
+            if storage is not None:
+                insert_alert = getattr(storage, "insert_alert", None)
+                if insert_alert is not None:
+                    insert_alert("warning", "sns/slack", f"[자동 실행] MLOps 에이전트 재학습 트리거: {reason}")
+            return {
+                "ok": True,
+                "mode": "auto",
+                "executed": True,
+                "candidate_version": job.get("candidate_version"),
+                "f1_score": job.get("f1_score"),
+                "message": "재학습이 자동 실행되어 신규 모델이 Staging에 등록되었습니다.",
+            }
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("auto retrain execution failed: %s", exc)
+            return {"ok": False, "mode": "auto", "executed": False, "error": str(exc)}
+
+    if mode == "notify":
+        notified = False
+        if storage is not None:
+            try:
+                insert_alert = getattr(storage, "insert_alert", None)
+                if insert_alert is not None:
+                    insert_alert("info", "sns/slack", f"[알림] 재학습 권고(실행 안 함): {reason}")
+                    notified = True
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("notify retrain failed: %s", exc)
+        return {
+            "ok": True,
+            "mode": "notify",
+            "executed": False,
+            "notified": notified,
+            "message": "재학습 권고 알림만 발송했습니다. 실행은 담당자 판단에 맡깁니다.",
+        }
+
+    # default: approval-gated
+    approval_id: str | None = None
     if storage is not None:
         try:
             insert_pending_approval = getattr(storage, "insert_pending_approval", None)
@@ -245,13 +290,22 @@ def recommend_retrain(reason: str) -> dict:
                     # sentinel rather than None (which silently failed the insert).
                     inspection_id="FLEET",
                     tool_name="recommend_retrain",
-                    payload={"reason": reason},
+                    payload={"reason": reason, "mode": "approval"},
                     reason=reason,
                 )
         except Exception as exc:
             logger.warning("recommend_retrain storage call failed: %s", exc)
+    return {"ok": True, "mode": "approval", "approval_id": approval_id, "status": "pending"}
 
-    return {"ok": True, "approval_id": approval_id, "status": "pending"}
+
+def recommend_retrain(reason: str) -> dict:
+    """Recommend model retraining (approval-gated by default).
+
+    The MLOps agent injects an autonomy-mode-bound variant via
+    ``execute_retrain_decision``; this default keeps approval semantics for the
+    inspection agent and any direct callers.
+    """
+    return execute_retrain_decision(reason, mode="approval")
 
 
 # ---------------------------------------------------------------------------

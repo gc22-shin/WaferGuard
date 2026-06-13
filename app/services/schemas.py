@@ -74,6 +74,9 @@ class RetrainRequest(BaseModel):
 class MlopsAgentRequest(BaseModel):
     line_id: str = Field(default="ALL", min_length=2, max_length=64)
     use_llm: bool = True
+    # autonomy mode for the retrain trigger:
+    #  auto = execute now, approval = queue for human approval, notify = alert only
+    autonomy: Literal["auto", "approval", "notify"] = "approval"
 
 
 class PromoteRequest(BaseModel):

@@ -251,6 +251,87 @@ export function Markdown({ text, style }) {
   return <div className="md-body" style={style}>{blocks}</div>;
 }
 
+// ── Tool call chip (agentic tool activity, click to inspect result) ─────────────
+export const TOOL_META = {
+  search_similar_cases:    { icon: "history",  label: "RAG 유사 사례 검색" },
+  get_equipment_history:   { icon: "layers",   label: "설비 이력 조회" },
+  get_metrology_trend:     { icon: "activity", label: "계측 추세 조회" },
+  get_mlops_state:         { icon: "cpu",      label: "MLOps 상태 조회" },
+  compare_with_past_wafer: { icon: "zoom",     label: "웨이퍼 이미지 비교" },
+  recommend_retrain:       { icon: "refresh",  label: "재학습 권고" },
+};
+
+function _argText(args) {
+  return args && Object.keys(args).length
+    ? Object.entries(args).map(([k, v]) => `${k}=${v}`).join(", ") : "";
+}
+
+// Group repeated calls of the same tool into one entry, preserving first-seen order.
+export function groupToolCalls(calls) {
+  const order = [];
+  const map = new Map();
+  for (const c of calls || []) {
+    if (!map.has(c.name)) { map.set(c.name, []); order.push(c.name); }
+    map.get(c.name).push(c);
+  }
+  return order.map(name => ({ name, calls: map.get(name) }));
+}
+
+function ToolGroupChip({ group }) {
+  const [open, setOpen] = useState(false);
+  const meta = TOOL_META[group.name] || { icon: "cpu", label: group.name };
+  const calls = group.calls;
+  const count = calls.length;
+  const running = calls.some(c => c.status === "running");
+  const hasResult = calls.some(c => c.result !== undefined && c.result !== null);
+  const lastSummary = [...calls].reverse().find(c => c.summary)?.summary;
+  const collapsed = running ? "실행 중…" : (count > 1 ? `${count}회 호출` : (lastSummary || "완료"));
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <button onClick={() => hasResult && setOpen(o => !o)} className="focusable"
+        style={{
+          display: "flex", alignItems: "center", gap: 6, width: "100%", textAlign: "left",
+          fontSize: 10.5, padding: "5px 8px", borderRadius: 6, font: "inherit",
+          background: "var(--accent-dim)", border: "1px solid var(--accent-line)",
+          color: running ? "var(--accent)" : "var(--text-2)",
+          cursor: hasResult ? "pointer" : "default",
+        }}>
+        <Icon name={running ? "refresh" : "check"} size={11}
+          style={running ? { animation: "spin 1s linear infinite" } : undefined} />
+        <Icon name={meta.icon} size={11} />
+        <span style={{ fontWeight: 600, color: running ? "var(--accent)" : "var(--text)" }}>{meta.label}</span>
+        {count > 1 && (
+          <span className="mono" style={{ fontSize: 9, fontWeight: 700, padding: "0 5px", borderRadius: 99, color: "var(--accent)", background: "var(--panel)" }}>×{count}</span>
+        )}
+        <span style={{ flex: 1, minWidth: 0, color: "var(--text-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {collapsed}
+        </span>
+        {hasResult && <Icon name={open ? "chevD" : "chevR"} size={11} style={{ flex: "none", color: "var(--text-3)" }} />}
+      </button>
+      {open && hasResult && (
+        <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 6 }}>
+          {calls.map((c, i) => {
+            const at = _argText(c.args);
+            return (
+              <div key={i}>
+                <div className="mono" style={{ fontSize: 9, color: "var(--text-3)", padding: "0 2px 2px" }}>
+                  {count > 1 ? `#${i + 1} ` : ""}{at ? `args · ${at}` : (c.summary || "")}
+                </div>
+                {c.result != null && <pre className="tool-result" style={{ margin: 0 }}>{JSON.stringify(c.result, null, 2)}</pre>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Render a list of tool calls, collapsing duplicate tool names into one entry.
+export function ToolCalls({ calls }) {
+  return <>{groupToolCalls(calls).map(g => <ToolGroupChip key={g.name} group={g} />)}</>;
+}
+
 // ── SubTabs (segmented control inside a top-level tab) ──────────────────────────
 export function SubTabs({ tabs, active, onChange }) {
   return (

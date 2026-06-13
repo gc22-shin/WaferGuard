@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Icon, Panel, Metric, RiskBadge, RiskGauge, Modal, Markdown } from "./lib";
+import { Icon, Panel, Metric, RiskBadge, RiskGauge, Modal, Markdown, ToolCalls } from "./lib";
 import { useStream } from "./SettingsContext";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
@@ -222,36 +222,6 @@ function ActionRow({ idx, action, onExecute, onEvidence, disabled, busy }) {
 
 /* ---------- chat ---------- */
 
-// tool → display label/icon for the live tool-activity UI
-const TOOL_META = {
-  search_similar_cases:   { icon: "history",  label: "RAG 유사 사례 검색" },
-  get_equipment_history:  { icon: "layers",   label: "설비 이력 조회" },
-  get_metrology_trend:    { icon: "activity", label: "계측 추세 조회" },
-  get_mlops_state:        { icon: "cpu",      label: "MLOps 상태 조회" },
-  compare_with_past_wafer:{ icon: "zoom",     label: "웨이퍼 이미지 비교" },
-};
-
-function ToolActivity({ tool }) {
-  const meta = TOOL_META[tool.name] || { icon: "cpu", label: tool.name };
-  const running = tool.status === "running";
-  return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 6, fontSize: 10.5,
-      padding: "5px 8px", borderRadius: 6, marginBottom: 4,
-      background: "var(--accent-dim)", border: "1px solid var(--accent-line)",
-      color: running ? "var(--accent)" : "var(--text-2)",
-    }}>
-      <Icon name={running ? "refresh" : "check"} size={11}
-        style={running ? { animation: "spin 1s linear infinite" } : undefined} />
-      <Icon name={meta.icon} size={11} />
-      <span style={{ fontWeight: 600 }}>{meta.label}</span>
-      <span style={{ color: "var(--text-3)" }}>
-        {running ? "실행 중…" : (tool.summary || "완료")}
-      </span>
-    </div>
-  );
-}
-
 function DefectChat({ inspectionId, llmOn }) {
   const [msgs, setMsgs] = useState([]);
   const [input, setInput] = useState("");
@@ -278,7 +248,7 @@ function DefectChat({ inspectionId, llmOn }) {
       patchLast(a => {
         const tools = (a.tools || []).slice();
         for (let i = tools.length - 1; i >= 0; i--) {
-          if (tools[i].status === "running") { tools[i] = { ...tools[i], status: "done", summary: ev.summary }; break; }
+          if (tools[i].status === "running") { tools[i] = { ...tools[i], status: "done", summary: ev.summary, result: ev.result }; break; }
         }
         return { ...a, tools };
       });
@@ -366,7 +336,7 @@ function DefectChat({ inspectionId, llmOn }) {
               fontSize: 12, lineHeight: 1.6, color: "var(--text)",
               whiteSpace: isUser ? "pre-wrap" : "normal",
             }}>
-              {hasTools && m.tools.map((t, ti) => <ToolActivity key={ti} tool={t} />)}
+              {hasTools && <ToolCalls calls={m.tools} />}
               {thinking ? (
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "var(--text-3)" }}>
                   <Icon name="refresh" size={12} style={{ animation: "spin 1s linear infinite" }} />분석 중…

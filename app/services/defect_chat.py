@@ -226,7 +226,7 @@ def stream_chat_about_inspection(
                         result = {"error": str(exc)}
 
                 tool_calls_log.append({"name": name, "args": args, "result": result})
-                yield {"type": "tool_result", "name": name, "summary": _summarize_tool_result(name, result)}
+                yield {"type": "tool_result", "name": name, "summary": _summarize_tool_result(name, result), "result": result}
                 messages.append(
                     {
                         "role": "tool",

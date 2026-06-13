@@ -273,7 +273,7 @@ def mlops_agent_run(request: MlopsAgentRequest) -> dict[str, object]:
     try:
         from app.services.agent import run_mlops_agent  # noqa: PLC0415
 
-        return run_mlops_agent(line_id=request.line_id, use_llm=request.use_llm)
+        return run_mlops_agent(line_id=request.line_id, use_llm=request.use_llm, autonomy=request.autonomy)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"MLOps agent run failed: {exc}") from exc
 
@@ -286,7 +286,7 @@ def mlops_agent_run_stream(request: MlopsAgentRequest) -> StreamingResponse:
 
     def event_source():
         try:
-            for event in stream_mlops_agent(line_id=request.line_id, use_llm=request.use_llm):
+            for event in stream_mlops_agent(line_id=request.line_id, use_llm=request.use_llm, autonomy=request.autonomy):
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as exc:  # noqa: BLE001
             err = {"type": "done", "final_action": f"오류: 분석 실행 실패 ({exc})", "agent_mode": "error", "tool_calls": []}

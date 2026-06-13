@@ -232,6 +232,7 @@ class AgentState(TypedDict):
     max_iterations: int
     iteration: int
     tool_schemas: list[dict]  # which tools this profile exposes (inspection vs mlops)
+    tool_registry: dict | None  # optional per-run registry override (autonomy-bound tools)
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +360,7 @@ def _node_tool_exec(state: AgentState) -> AgentState:
     """Execute all tool_calls from the last assistant message."""
     last_msg = state["messages"][-1]
     tool_calls = last_msg.get("tool_calls") or []
-    registry = _get_tool_registry()
+    registry = state.get("tool_registry") or _get_tool_registry()
 
     for tc in tool_calls:
         fn = tc.get("function", {})
@@ -529,6 +530,7 @@ def run(evidence: dict) -> dict:
         "max_iterations": 5,
         "iteration": 0,
         "tool_schemas": _TOOL_SCHEMAS,
+        "tool_registry": None,
     }
 
     use_llm = bool(evidence.get("use_llm", True))
@@ -626,11 +628,39 @@ _MLOPS_SYSTEM_PROMPT = """당신은 WaferGuard MLOps 에이전트입니다.
 1. 먼저 get_mlops_state로 현재 운영 모델 성능(F1), 최신 drift 이벤트, 최근 재학습 이력을 확인합니다.
 2. 입력 분포가 실제로 밀리는지 보려면 get_metrology_trend(equipment_id, metric)로 주요 설비 계측 추세를 확인합니다.
 3. 결함 구성이 바뀌었는지 보려면 get_equipment_history(equipment_id)로 결함 분포를 확인합니다.
-4. drift score가 임계치를 넘고 + 성능 저하/입력 분포 변화 근거가 모이면 recommend_retrain(reason)으로 재학습을 권고합니다.
-   recommend_retrain은 사람 승인 대기(pending_approvals)로 등록되며, 반드시 수치 근거를 reason에 명시합니다.
+4. drift score가 임계치를 넘고 + 성능 저하/입력 분포 변화 근거가 모이면 recommend_retrain(reason)을 호출합니다.
+   반드시 수치 근거를 reason에 명시합니다. (실제 처리 방식은 아래 '자율 모드'에 따라 달라집니다.)
 5. 근거가 부족하면 재학습을 권고하지 말고 "현 상태 유지 + 모니터링 지속"으로 판단합니다.
 6. 최종 판단은 한국어로 간결하게, drift score·F1·추세 수치를 인용해 작성합니다.
 7. 수치를 지어내지 않습니다. 도구로 조회한 값만 사용합니다."""
+
+
+_AUTONOMY_PROMPT = {
+    "auto": (
+        "[자율 모드: 자동 실행] recommend_retrain을 호출하면 사람 승인 없이 즉시 재학습이 실행됩니다. "
+        "근거가 충분할 때만 신중히 호출하세요."
+    ),
+    "approval": (
+        "[자율 모드: 승인 필요] recommend_retrain을 호출하면 사람 승인 대기열에 등록되며, "
+        "엔지니어 승인 후에야 재학습이 실행됩니다."
+    ),
+    "notify": (
+        "[자율 모드: 알림만] recommend_retrain을 호출하면 담당자에게 알림만 발송되고 실행되지 않습니다. "
+        "권고 사실을 알리는 용도입니다."
+    ),
+}
+
+
+def _mlops_registry(autonomy: str) -> dict[str, Any]:
+    """Full tool registry with recommend_retrain bound to the autonomy mode."""
+    registry = dict(_get_tool_registry())
+    try:
+        from app.services.tools import execute_retrain_decision  # noqa: PLC0415
+
+        registry["recommend_retrain"] = lambda reason="", **_: execute_retrain_decision(reason=reason, mode=autonomy)
+    except ImportError:
+        pass
+    return registry
 
 
 def _build_mlops_evidence(line_id: str) -> str:
@@ -673,19 +703,21 @@ def _build_mlops_evidence(line_id: str) -> str:
     return "\n".join(lines)
 
 
-def run_mlops_agent(line_id: str = "ALL", use_llm: bool = True) -> dict:
+def run_mlops_agent(line_id: str = "ALL", use_llm: bool = True, autonomy: str = "approval") -> dict:
     """Run the MLOps agent over current fleet/model state.
 
-    Returns the same shape as ``run`` (final_action, tool_calls, trace_id,
-    agent_mode, agent_kind). Trace is persisted under a synthetic id.
+    ``autonomy`` controls what happens when the agent decides to retrain:
+    "auto" (execute now), "approval" (queue for human approval), "notify"
+    (alert only). Returns the same shape as ``run``.
     """
     evidence_text = _build_mlops_evidence(line_id)
     trace_key = f"MLOPS-{line_id}"
+    autonomy_note = _AUTONOMY_PROMPT.get(autonomy, _AUTONOMY_PROMPT["approval"])
 
     initial_state: AgentState = {
         "inspection_id": trace_key,
         "messages": [
-            {"role": "system", "content": _MLOPS_SYSTEM_PROMPT},
+            {"role": "system", "content": _MLOPS_SYSTEM_PROMPT + "\n\n" + autonomy_note},
             {
                 "role": "user",
                 "content": (
@@ -700,6 +732,7 @@ def run_mlops_agent(line_id: str = "ALL", use_llm: bool = True) -> dict:
         "max_iterations": 5,
         "iteration": 0,
         "tool_schemas": _mlops_tool_schemas(),
+        "tool_registry": _mlops_registry(autonomy),
     }
 
     def _rule_fallback() -> str:
@@ -740,18 +773,25 @@ def _summarize_mlops_tool(name: str, result: object) -> str:
         rec = " · 반복성" if result.get("is_recurring") else ""
         return f"{result.get('equipment_id')} {result.get('window_hours')}h: 검사 {result.get('total_inspections')}건{rec}"
     if name == "recommend_retrain":
-        return f"재학습 승인 대기 등록 ({result.get('approval_id', 'pending')})"
+        mode = result.get("mode")
+        if mode == "auto":
+            return f"자동 실행됨 → {result.get('candidate_version', '신규 모델')} (F1 {result.get('f1_score', '?')})"
+        if mode == "notify":
+            return "알림만 발송 (실행 안 함)"
+        return f"승인 대기 등록 ({result.get('approval_id', 'pending')})"
     return "완료"
 
 
-def stream_mlops_agent(line_id: str = "ALL", use_llm: bool = True) -> Iterator[dict]:
+def stream_mlops_agent(line_id: str = "ALL", use_llm: bool = True, autonomy: str = "approval") -> Iterator[dict]:
     """Streaming MLOps agent: yields SSE-friendly events as it reasons.
 
+    ``autonomy`` controls the retrain action: auto / approval / notify.
     Event types: tool_call / tool_result / token / done — same contract the
     inspection chat uses, so the frontend can reuse its stream handler.
     """
     evidence_text = _build_mlops_evidence(line_id)
     trace_key = f"MLOPS-{line_id}"
+    autonomy_note = _AUTONOMY_PROMPT.get(autonomy, _AUTONOMY_PROMPT["approval"])
     has_key = bool(os.environ.get("LUXIA_API_KEY", "").strip())
 
     if not use_llm or not has_key:
@@ -765,7 +805,7 @@ def stream_mlops_agent(line_id: str = "ALL", use_llm: bool = True) -> Iterator[d
         return
 
     messages: list[dict] = [
-        {"role": "system", "content": _MLOPS_SYSTEM_PROMPT},
+        {"role": "system", "content": _MLOPS_SYSTEM_PROMPT + "\n\n" + autonomy_note},
         {
             "role": "user",
             "content": (
@@ -775,7 +815,7 @@ def stream_mlops_agent(line_id: str = "ALL", use_llm: bool = True) -> Iterator[d
         },
     ]
     schemas = _mlops_tool_schemas()
-    registry = _get_tool_registry()
+    registry = _mlops_registry(autonomy)
     tool_calls_log: list[dict] = []
 
     for iteration in range(_MLOPS_STREAM_MAX_ITERATIONS):
@@ -806,7 +846,7 @@ def stream_mlops_agent(line_id: str = "ALL", use_llm: bool = True) -> Iterator[d
                         result = {"error": str(exc)}
 
                 tool_calls_log.append({"name": name, "args": args, "result": result})
-                yield {"type": "tool_result", "name": name, "summary": _summarize_mlops_tool(name, result)}
+                yield {"type": "tool_result", "name": name, "summary": _summarize_mlops_tool(name, result), "result": result}
                 messages.append(
                     {
                         "role": "tool",
@@ -842,5 +882,6 @@ def stream_mlops_agent(line_id: str = "ALL", use_llm: bool = True) -> Iterator[d
             "tool_calls": tool_calls_log,
             "trace_id": trace_id,
             "agent_kind": "mlops",
+            "autonomy": autonomy,
         }
         return
