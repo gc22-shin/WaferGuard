@@ -89,11 +89,6 @@ app.add_middleware(
 
 app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
 
-import pathlib as _pathlib
-_FRONTEND_DIST = _pathlib.Path(__file__).resolve().parents[1] / "frontend" / "dist"
-if _FRONTEND_DIST.exists():
-    app.mount("/", StaticFiles(directory=_FRONTEND_DIST, html=True), name="frontend")
-
 
 @app.get("/health")
 def health() -> dict[str, object]:
@@ -536,3 +531,9 @@ def inspection_agent_stream(inspection_id: str, request: AgentStreamRequest) -> 
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+import pathlib as _pathlib
+_FRONTEND_DIST = _pathlib.Path(__file__).resolve().parents[1] / "frontend" / "dist"
+if _FRONTEND_DIST.exists():
+    app.mount("/", StaticFiles(directory=_FRONTEND_DIST, html=True), name="frontend")
