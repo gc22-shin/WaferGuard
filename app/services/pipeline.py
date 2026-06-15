@@ -272,6 +272,11 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
             "sns/slack",
             f"{request.line_id} {request.wafer_id}: {defect_type} High risk 감지",
         )
+    # DB now holds canonical keys; the API response must return browser-usable
+    # URLs (local path or S3 presigned), matching what reads return.
+    for field in ("image_url", "heatmap_url", "overlay_url", "roi_url", "report_csv_url", "report_pdf_url"):
+        if record.get(field):
+            record[field] = object_store.presign(record[field])
     return record
 
 
