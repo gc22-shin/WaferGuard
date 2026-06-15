@@ -152,7 +152,9 @@ def run_automation_tick(request: AutomationTickRequest) -> dict[str, object]:
             equipment_id=str(scenario["equipment_id"]),
             process_step=scenario["process_step"],
             recipe_id=str(scenario["recipe_id"]),
-            defect_hint=scenario["defect_hint"],
+            # SCENARIOS use "defect_hint"; demo_scenario_script.json uses
+            # "defect_type" — accept either so the tick works with both sources.
+            defect_hint=str(scenario.get("defect_hint") or scenario.get("defect_type") or "Random"),
             cd_nm=float(scenario["cd_nm"]),
             overlay_nm=float(scenario["overlay_nm"]),
             film_thickness_nm=88.0 + random.uniform(-5.0, 8.0),
