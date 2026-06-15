@@ -42,11 +42,14 @@ function AutonomyPicker({ value, onChange, disabled }) {
 }
 
 function outcomeFor(entry) {
-  const recommended = (entry.steps || []).some(s => s.name === "recommend_retrain");
-  if (!recommended) return { label: "현 상태 유지", color: "var(--low)" };
-  return entry.autonomy === "auto"
-    ? { label: "재학습 자동 실행됨", color: "var(--high)" }
-    : { label: "재학습 승인 대기", color: "var(--med)" };
+  const step = (entry.steps || []).find(s => s.name === "recommend_retrain");
+  if (!step) return { label: "현 상태 유지", color: "var(--low)" };
+  // reflect what actually happened, not just that the tool was called
+  const r = step.result || {};
+  if (r.skipped) return { label: "재학습 보류 · 진행 중 후보 있음", color: "var(--text-3)" };
+  if (entry.autonomy === "auto") return { label: "재학습 자동 실행됨", color: "var(--high)" };
+  if (r.deduped) return { label: "재학습 승인 대기 · 기존 요청에 합침", color: "var(--med)" };
+  return { label: "재학습 승인 대기", color: "var(--med)" };
 }
 
 function LogEntry({ entry }) {
@@ -132,10 +135,15 @@ function buildLogContext(logs) {
   if (!logs?.length) return "";
   const lines = ["화면의 모니터링 로그 (최신순):"];
   logs.slice(0, 10).forEach(e => {
-    const recommended = (e.steps || []).some(s => s.name === "recommend_retrain");
-    const outcome = recommended
-      ? (e.autonomy === "auto" ? "재학습 자동 실행" : "재학습 권고/승인 대기")
-      : "현 상태 유지";
+    const step = (e.steps || []).find(s => s.name === "recommend_retrain");
+    const r = step?.result || {};
+    const outcome = !step
+      ? "현 상태 유지"
+      : r.skipped
+        ? "재학습 보류(진행 중 후보 있음)"
+        : e.autonomy === "auto"
+          ? "재학습 자동 실행"
+          : "재학습 권고/승인 대기";
     const tools = (e.steps || []).map(s => s.name).join(", ") || "없음";
     const final = (e.finalText || "").trim().replace(/\s+/g, " ").slice(0, 200);
     lines.push(`- ${e.ts} · 자율=${e.autonomy} · ${outcome} · 툴=[${tools}]${final ? ` · 판단: ${final}` : ""}`);

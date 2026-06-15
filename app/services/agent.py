@@ -238,6 +238,7 @@ def _get_tool_registry() -> dict[str, Any]:
             "get_equipment_history": tools.get_equipment_history,
             "get_metrology_trend": tools.get_metrology_trend,
             "get_mlops_state": tools.get_mlops_state,
+            "get_model_registry": tools.get_model_registry,
             "compare_with_past_wafer": tools.compare_with_past_wafer,
             "escalate_to_mlops": tools.escalate_to_mlops,
         }
@@ -258,6 +259,7 @@ def _stub_registry() -> dict[str, Any]:
         "get_equipment_history": lambda **kwargs: _stub(**kwargs),
         "get_metrology_trend": lambda **kwargs: _stub(**kwargs),
         "get_mlops_state": lambda **kwargs: _stub(**kwargs),
+        "get_model_registry": lambda **kwargs: _stub(**kwargs),
         "compare_with_past_wafer": lambda **kwargs: _stub(**kwargs),
         "escalate_to_mlops": lambda **kwargs: _stub(**kwargs),
     }
@@ -645,6 +647,7 @@ def _drive_and_persist(
 
 _MLOPS_TOOL_NAMES = {
     "get_mlops_state",
+    "get_model_registry",
     "get_metrology_trend",
     "get_equipment_history",
     "recommend_retrain",
@@ -665,6 +668,8 @@ _MLOPS_SYSTEM_PROMPT = """당신은 WaferGuard MLOps 에이전트입니다.
 
 규칙:
 1. 먼저 get_mlops_state로 현재 운영 모델 성능(F1), 최신 drift 이벤트, 최근 재학습 이력을 확인합니다.
+   모델 레지스트리 전체(Production/Staging/Archived 단계별 목록)와 재학습 진행 현황,
+   현재 학습 중인 후보가 있는지(retrain_in_progress)를 자세히 보려면 get_model_registry를 사용합니다.
 2. 입력 분포가 실제로 밀리는지 보려면 get_metrology_trend(equipment_id, metric)로 주요 설비 계측 추세를 확인합니다.
 3. 결함 구성이 바뀌었는지 보려면 get_equipment_history(equipment_id)로 결함 분포를 확인합니다.
 4. drift score가 임계치를 넘고 + 성능 저하/입력 분포 변화 근거가 모이면 recommend_retrain(reason)을 호출합니다.
@@ -824,6 +829,14 @@ def _summarize_mlops_tool(name: str, result: object) -> str:
         pm = result.get("production_model") or {}
         de = result.get("latest_drift_event") or {}
         return f"운영모델 F1 {pm.get('f1_score', '?')} · drift {de.get('drift_score', '?')} ({de.get('status', '?')})"
+    if name == "get_model_registry":
+        pm = result.get("production_model") or {}
+        stg = len(result.get("staging_candidates") or [])
+        training = " · 학습 중" if result.get("retrain_in_progress") else ""
+        return (
+            f"모델 {result.get('total_models', '?')}개 (Prod {pm.get('version', '?')}, "
+            f"Staging {stg}개){training}"
+        )
     if name == "get_metrology_trend":
         return f"{result.get('metric')} {result.get('trend')} · Δ{result.get('delta')} ({result.get('pct_change')}%, n={result.get('n')})"
     if name == "get_equipment_history":
@@ -831,10 +844,14 @@ def _summarize_mlops_tool(name: str, result: object) -> str:
         return f"{result.get('equipment_id')} {result.get('window_hours')}h: 검사 {result.get('total_inspections')}건{rec}"
     if name == "recommend_retrain":
         mode = result.get("mode")
+        if result.get("skipped"):
+            return f"건너뜀 — 이미 진행 중 ({result.get('candidate_version', '?')})"
         if mode == "auto":
-            return f"자동 실행됨 → {result.get('candidate_version', '신규 모델')} (F1 {result.get('f1_score', '?')})"
+            return f"재학습 시작됨 → {result.get('candidate_version', '신규 모델')} (학습 중)"
         if mode == "notify":
             return "알림만 발송 (실행 안 함)"
+        if result.get("deduped"):
+            return f"기존 승인 요청에 합침 ({result.get('approval_id', 'pending')})"
         return f"승인 대기 등록 ({result.get('approval_id', 'pending')})"
     return "완료"
 

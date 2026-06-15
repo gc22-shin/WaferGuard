@@ -135,6 +135,12 @@ function StagePill({ stage }) {
 }
 
 const SEV_COLOR = { critical: "var(--high)", warning: "var(--med)", info: "var(--accent)" };
+// retraining job status → chip style ("running" trains for ~20s before "completed")
+const JOB_STATUS = {
+  running:   { c: "var(--amber)", t: "학습 중", spin: true },
+  completed: { c: "var(--low)",   t: "completed" },
+  failed:    { c: "var(--high)",  t: "failed" },
+};
 const ts = s => (s || "").slice(5, 19).replace("T", " ");
 
 export default function MlopsView() {
@@ -161,6 +167,15 @@ export default function MlopsView() {
   }, []);
 
   useEffect(() => { load(); }, [load, tick]);
+
+  // while a candidate is training, poll so the running → completed flip (and the
+  // new Staging model) appear without a manual refresh.
+  useEffect(() => {
+    const hasRunning = (state?.recent_retraining_jobs || []).some(j => j.status === "running");
+    if (!hasRunning) return;
+    const id = setInterval(load, 3500);
+    return () => clearInterval(id);
+  }, [state, load]);
 
   async function modelAction(version, kind) {
     if (busy) return;
@@ -194,7 +209,7 @@ export default function MlopsView() {
         body: JSON.stringify({ comment }),
       });
       setComments(c => { const n = { ...c }; delete n[id]; return n; });
-      flash(decision === "approve" ? "재학습 승인 — 실행됨" : "권고 거절됨");
+      flash(decision === "approve" ? "재학습 승인 — 학습 시작 (약 20초)" : "권고 거절됨");
       await load();
     } finally { setBusy(false); }
   }
@@ -337,17 +352,25 @@ export default function MlopsView() {
             <div style={{ padding: "22px 12px", textAlign: "center", fontSize: 11.5, color: "var(--text-3)" }}>재학습 잡이 없습니다.</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {jobs.map((j, i) => (
-                <div key={i} className="panel-inset" style={{ padding: "9px 11px", display: "flex", alignItems: "center", gap: 9 }}>
-                  <Icon name="cpu" size={13} style={{ color: "var(--amber)" }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="mono" style={{ fontSize: 11.5, color: "var(--text)", fontWeight: 600 }}>{j.candidate_version}</div>
-                    <div style={{ fontSize: 10, color: "var(--text-3)" }}>trigger: {j.trigger_type} · {ts(j.created_at)}</div>
+              {jobs.map((j, i) => {
+                const st = JOB_STATUS[j.status] || { c: "var(--text-3)", t: j.status };
+                const running = j.status === "running";
+                return (
+                  <div key={i} className="panel-inset" style={{ padding: "9px 11px", display: "flex", alignItems: "center", gap: 9 }}>
+                    <Icon name={running ? "refresh" : "cpu"} size={13}
+                      style={running ? { color: "var(--amber)", animation: "spin 1s linear infinite" } : { color: "var(--amber)" }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="mono" style={{ fontSize: 11.5, color: "var(--text)", fontWeight: 600 }}>{j.candidate_version}</div>
+                      <div style={{ fontSize: 10, color: "var(--text-3)" }}>trigger: {j.trigger_type} · {ts(j.created_at)}</div>
+                    </div>
+                    {/* hold the F1 until training completes — it isn't measured yet */}
+                    <span className="mono" style={{ fontSize: 11, color: running ? "var(--text-3)" : "var(--accent)", fontWeight: 600 }}>
+                      {running ? "F1 측정 중" : `F1 ${j.f1_score}`}
+                    </span>
+                    <span className="chip" style={{ fontSize: 8.5, color: st.c, borderColor: st.c }}>{st.t}</span>
                   </div>
-                  <span className="mono" style={{ fontSize: 11, color: "var(--accent)", fontWeight: 600 }}>F1 {j.f1_score}</span>
-                  <span className="chip" style={{ fontSize: 8.5, color: "var(--low)", borderColor: "var(--low)" }}>{j.status}</span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </Panel>

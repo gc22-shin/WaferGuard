@@ -528,6 +528,29 @@ def insert_retraining_job(job: dict[str, object]) -> None:
         )
 
 
+def update_retraining_job(job_id: str, status: str, f1_score: float | None = None) -> None:
+    """Flip a job's status (e.g. running -> completed), optionally setting its F1."""
+    with connect() as conn:
+        if f1_score is None:
+            conn.execute(
+                "UPDATE retraining_jobs SET status = ? WHERE id = ?", (status, job_id)
+            )
+        else:
+            conn.execute(
+                "UPDATE retraining_jobs SET status = ?, f1_score = ? WHERE id = ?",
+                (status, f1_score, job_id),
+            )
+
+
+def running_retraining_job() -> dict[str, object] | None:
+    """The most recent still-training job, or None — used to enforce one-at-a-time."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM retraining_jobs WHERE status = 'running' ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def insert_alert(severity: str, channel: str, content: str) -> None:
     alert_id = f"ALT-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
     with connect() as conn:
