@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.services.config import OUTPUT_DIR, ensure_runtime_dirs
+from app.services.config import IMAGE_BACKEND, OUTPUT_DIR, ensure_runtime_dirs
 from app.services.automation import automation_status, run_automation_tick
 from app.services.copilot import ops_copilot_summary
 from app.services.data_registry import metrology_threshold_basis, proxy_dataset_manifest
@@ -87,7 +87,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
+# Local images are served from disk; in S3 mode they're fetched via presigned URLs.
+if IMAGE_BACKEND == "local":
+    app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
 
 
 @app.get("/health")

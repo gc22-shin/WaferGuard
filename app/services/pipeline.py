@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import concurrent.futures
+import csv
 import hashlib
+import io
 import logging
 import os
 import random
 import threading
 from datetime import datetime, timezone
 
-from app.services.config import IMAGE_DIR, MODEL_VERSION
+from app.services import object_store
+from app.services.config import MODEL_VERSION
 from app.services.action_card import (
     build_action_card,
     build_metrology_context,
@@ -71,6 +74,45 @@ def _submit_agent(evidence: dict) -> bool:
     return True
 
 
+def _save_report_csv(inspection_id: str, record: dict) -> str:
+    """Write a one-row metadata CSV and return its object key."""
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    cols = [
+        "wafer_id", "lot_id", "equipment_id", "process_step", "recipe_id",
+        "defect_type", "risk_level", "risk_score", "confidence",
+        "cd_nm", "overlay_nm", "film_thickness_nm", "roughness_nm", "created_at",
+    ]
+    writer.writerow(cols)
+    writer.writerow([record.get(c) for c in cols])
+    data = buf.getvalue().encode("utf-8-sig")  # BOM → Excel reads Korean headers
+    return object_store.put_bytes(f"reports/{inspection_id}.csv", data, "text/csv")
+
+
+def _save_report_pdf(inspection_id: str, record: dict) -> str | None:
+    """Render the report text to a simple PDF (best-effort). Returns key or None.
+
+    fpdf2's core fonts are latin-1 only; Korean glyphs are replaced rather than
+    crashing. For fully legible Korean, register a TTF via pdf.add_font(). The
+    CSV (above) always holds the machine-readable data.
+    """
+    try:
+        from fpdf import FPDF  # noqa: PLC0415 — optional dependency
+    except Exception:  # noqa: BLE001
+        return None
+    try:
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("helvetica", size=11)
+        safe = str(record.get("report", "")).encode("latin-1", "replace").decode("latin-1")
+        pdf.multi_cell(0, 8, safe)
+        data = bytes(pdf.output())
+        return object_store.put_bytes(f"reports/{inspection_id}.pdf", data, "application/pdf")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("PDF report generation failed for %s: %s", inspection_id, exc)
+        return None
+
+
 def run_inspection(request: InspectRequest) -> dict[str, object]:
     defect_type = choose_defect(request.defect_hint)
     inspection_id = _inspection_id(request.wafer_id, defect_type)
@@ -79,7 +121,6 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
     image_result = generate_images(
         inspection_id=inspection_id,
         defect_type=defect_type,
-        output_dir=IMAGE_DIR,
     )
     cases = retrieve_cases(
         defect_type,
@@ -143,8 +184,8 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
             "process_context": process_context,
             "metrology": metrology,
             "image_urls": [
-                f"/outputs/images/{image_result['overlay_path'].name}",
-                f"/outputs/images/{image_result['roi_path'].name}",
+                image_result["overlay_key"],
+                image_result["roi_key"],
             ],
             "use_llm": request.use_llm,
         }
@@ -194,15 +235,22 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
         "risk_score": risk_score,
         "risk_level": level,
         "hotspot_ratio": image_result["hotspot_ratio"],
-        "image_url": f"/outputs/images/{image_result['image_path'].name}",
-        "heatmap_url": f"/outputs/images/{image_result['heatmap_path'].name}",
-        "overlay_url": f"/outputs/images/{image_result['overlay_path'].name}",
-        "roi_url": f"/outputs/images/{image_result['roi_path'].name}",
+        # Store canonical object keys (never expiring presigned URLs). Read-time
+        # presigning happens in storage._inspection_to_dict.
+        "image_url": image_result["image_key"],
+        "heatmap_url": image_result["heatmap_key"],
+        "overlay_url": image_result["overlay_key"],
+        "roi_url": image_result["roi_key"],
         "roi_bbox": image_result["roi_bbox"],
         "report": report,
         "cases": cases,
         "process_context": process_context,
         "metrology": metrology,
+        # Metrology values also as individual columns for SQL search/aggregation.
+        "cd_nm": metrology.get("cd_nm"),
+        "overlay_nm": metrology.get("overlay_nm"),
+        "film_thickness_nm": metrology.get("film_thickness_nm"),
+        "roughness_nm": metrology.get("roughness_nm"),
         "action_card": action_card,
         "model_version": model_version,
         "status": status,
@@ -213,6 +261,10 @@ def run_inspection(request: InspectRequest) -> dict[str, object]:
         "agent_trace_id": agent_result.get("trace_id") if agent_result else None,
         "agent_mode": agent_result.get("agent_mode") if agent_result else "rule_only",
     }
+    # Generate downloadable report files (CSV always; PDF best-effort) and store
+    # their object keys so they can be served via presigned URLs later.
+    record["report_csv_url"] = _save_report_csv(inspection_id, record)
+    record["report_pdf_url"] = _save_report_pdf(inspection_id, record)
     insert_inspection(record)
     if level == "High":
         insert_alert(

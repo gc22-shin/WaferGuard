@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
+from app.services import object_store
 from app.services.config import DB_PATH, MODEL_VERSION, ensure_runtime_dirs
 
 
@@ -145,6 +146,14 @@ def init_db() -> None:
         _ensure_column(conn, "inspections", "process_context_json", "TEXT")
         _ensure_column(conn, "inspections", "metrology_json", "TEXT")
         _ensure_column(conn, "inspections", "action_card_json", "TEXT")
+        # Report files in object storage (S3/local) — keys, presigned on read.
+        _ensure_column(conn, "inspections", "report_csv_url", "TEXT")
+        _ensure_column(conn, "inspections", "report_pdf_url", "TEXT")
+        # Metrology values as individual columns for SQL search/aggregation.
+        _ensure_column(conn, "inspections", "cd_nm", "REAL")
+        _ensure_column(conn, "inspections", "overlay_nm", "REAL")
+        _ensure_column(conn, "inspections", "film_thickness_nm", "REAL")
+        _ensure_column(conn, "inspections", "roughness_nm", "REAL")
         # human comment captured when an approval is approved/rejected — fed back
         # to the agent as context so it learns from the engineer's reasoning.
         _ensure_column(conn, "pending_approvals", "comment", "TEXT")
@@ -217,9 +226,10 @@ def insert_inspection(record: dict[str, object]) -> None:
                 id, lot_id, wafer_id, line_id, equipment_id, process_step, recipe_id, image_source, proxy_dataset, proxy_status,
                 defect_type, confidence, risk_score, risk_level, hotspot_ratio, image_url, heatmap_url,
                 overlay_url, roi_url, roi_bbox_json, report, cases_json, process_context_json, metrology_json,
-                action_card_json, model_version, status, created_at
+                action_card_json, model_version, status, created_at,
+                report_csv_url, report_pdf_url, cd_nm, overlay_nm, film_thickness_nm, roughness_nm
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record["id"],
@@ -250,6 +260,12 @@ def insert_inspection(record: dict[str, object]) -> None:
                 record["model_version"],
                 record["status"],
                 record["created_at"],
+                record.get("report_csv_url"),
+                record.get("report_pdf_url"),
+                record.get("cd_nm"),
+                record.get("overlay_nm"),
+                record.get("film_thickness_nm"),
+                record.get("roughness_nm"),
             ),
         )
 
@@ -687,6 +703,11 @@ def _inspection_to_dict(row: sqlite3.Row) -> dict[str, object]:
         if isinstance(action_card, dict) and action_card.get("defect_type")
         else _legacy_action_card(data)
     )
+    # Convert stored object keys into browser-fetchable URLs (local path or S3
+    # presigned URL) at read time, so the DB never holds an expiring URL.
+    for field in ("image_url", "heatmap_url", "overlay_url", "roi_url", "report_csv_url", "report_pdf_url"):
+        if data.get(field):
+            data[field] = object_store.presign(data[field])
     return data
 
 
