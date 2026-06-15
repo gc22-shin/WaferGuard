@@ -375,6 +375,56 @@ def _human_feedback_block(equipment_id: str | None, defect_type: str | None) -> 
     return "\n".join(out)
 
 
+def _retrain_approval_status_block() -> str:
+    """Authoritative, current state of retrain approvals (overrides the log).
+
+    The monitoring log labels any past ``recommend_retrain`` as "승인 대기", which
+    goes stale the moment a human approves/rejects it. This block reads the live
+    ``pending_approvals`` table so the agent knows what is *actually* still pending
+    versus already ruled on — and surfaces the engineer's rejection reason so the
+    next judgment incorporates it instead of re-recommending the same thing.
+    """
+    try:
+        from app.services.storage import (  # noqa: PLC0415
+            list_pending_approvals,
+            recent_human_feedback,
+        )
+
+        pending = [
+            a for a in list_pending_approvals("pending")
+            if a.get("tool_name") == "recommend_retrain"
+        ]
+        resolved = [
+            f for f in recent_human_feedback(None, None, limit=6)
+            if f.get("kind") == "approval"
+            and f.get("tool_name") == "recommend_retrain"
+            and f.get("decision") in ("approved", "rejected")
+        ]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("retrain approval status lookup failed: %s", exc)
+        return ""
+
+    out = ["\n## 재학습 승인 현황 (실시간 — 모니터링 로그의 '승인 대기' 표기보다 우선)"]
+    if pending:
+        out.append(f"  - 현재 대기 중인 재학습 승인 요청: {len(pending)}건")
+        for a in pending[:3]:
+            reason = (a.get("reason") or "").strip()
+            out.append(f"    · [대기중] {reason[:110]}")
+    else:
+        out.append("  - 현재 대기 중인 재학습 승인 요청: 없음")
+    if resolved:
+        out.append("  - 최근 담당자 결정 (이 결정과 사유를 다음 판단에 반영):")
+        for f in resolved[:4]:
+            decision = "승인" if f.get("decision") == "approved" else "거절"
+            reason = (f.get("reason") or "").strip()
+            reason_txt = f" — 권고사유: {reason[:70]}" if reason else ""
+            out.append(f"    · [{decision}]{reason_txt}")
+            comment = (f.get("comment") or "").strip()
+            if comment:
+                out.append(f"      ↳ 담당자 사유: \"{comment[:160]}\"")
+    return "\n".join(out)
+
+
 # ---------------------------------------------------------------------------
 # LangGraph nodes
 # ---------------------------------------------------------------------------
@@ -675,8 +725,10 @@ _MLOPS_SYSTEM_PROMPT = """당신은 WaferGuard MLOps 에이전트입니다.
 4. drift score가 임계치를 넘고 + 성능 저하/입력 분포 변화 근거가 모이면 recommend_retrain(reason)을 호출합니다.
    반드시 수치 근거를 reason에 명시합니다. (실제 처리 방식은 아래 '자율 모드'에 따라 달라집니다.)
 5. 근거가 부족하면 재학습을 권고하지 말고 "현 상태 유지 + 모니터링 지속"으로 판단합니다.
-6. 최종 판단은 한국어로 간결하게, drift score·F1·추세 수치를 인용해 작성합니다.
-7. 수치를 지어내지 않습니다. 도구로 조회한 값만 사용합니다."""
+6. '재학습 승인 현황' 섹션이 승인 대기열의 실제 최신 상태입니다. 모니터링 로그에 과거 권고가 '승인 대기'로 보여도, 이 섹션에서 '대기 없음' 또는 '거절'로 확인되면 그것이 사실입니다. 이미 거절된 권고를 아직 대기 중인 것으로 오해하지 마세요.
+7. 담당자가 거절한 재학습 권고는 같은 근거로 반복하지 않습니다. 거절 사유(담당자 사유)를 명시적으로 인용하고, 그 사유를 반영해 판단을 갱신합니다. (예: 거절 사유가 해소됐거나 새로운 악화 근거가 있을 때만 재권고)
+8. 최종 판단은 한국어로 간결하게, drift score·F1·추세 수치를 인용해 작성합니다.
+9. 수치를 지어내지 않습니다. 도구로 조회한 값만 사용합니다."""
 
 
 _AUTONOMY_PROMPT = {
@@ -743,6 +795,12 @@ def _build_mlops_evidence(line_id: str) -> str:
             lines.append("## 주요 설비(추세 조회용): " + ", ".join(equips))
     except Exception:  # noqa: BLE001
         pass
+
+    # Authoritative current state of retrain approvals — kills the stale "승인 대기"
+    # belief once an engineer has approved/rejected the recommendation.
+    approval_block = _retrain_approval_status_block()
+    if approval_block:
+        lines.append(approval_block)
 
     # Fleet-level human feedback (B-5): how engineers ruled on past retrain
     # recommendations, so the agent doesn't re-recommend something just rejected.

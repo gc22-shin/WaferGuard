@@ -50,8 +50,30 @@ _CHAT_ADDENDUM = (
 
 def _outcome_of(trace: dict) -> str:
     tools = trace.get("tool_calls") or []
-    recommended = any(t.get("name") == "recommend_retrain" for t in tools)
-    return "재학습 권고" if recommended else "현 상태 유지"
+    rec = next((t for t in tools if t.get("name") == "recommend_retrain"), None)
+    if rec is None:
+        return "현 상태 유지"
+    # Reconcile with how the human eventually ruled — a recommendation later
+    # rejected/approved must NOT keep reading as a live "재학습 권고/승인 대기".
+    result = rec.get("result") or {}
+    mode = result.get("mode")
+    if mode == "auto" or result.get("executed"):
+        return "재학습 자동 실행"
+    approval_id = result.get("approval_id")
+    if approval_id:
+        try:
+            from app.services.storage import get_approval  # noqa: PLC0415
+
+            row = get_approval(approval_id) or {}
+        except Exception:  # noqa: BLE001
+            row = {}
+        status = row.get("status")
+        if status == "rejected":
+            comment = (row.get("comment") or "").strip()
+            return f"재학습 권고 → 담당자 거절{f' (사유: {comment[:50]})' if comment else ''}"
+        if status == "approved":
+            return "재학습 권고 → 담당자 승인"
+    return "재학습 권고 (승인 대기)"
 
 
 def _monitoring_log_context(line_id: str) -> str:

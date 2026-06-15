@@ -143,7 +143,8 @@ function buildLogContext(logs) {
         ? "재학습 보류(진행 중 후보 있음)"
         : e.autonomy === "auto"
           ? "재학습 자동 실행"
-          : "재학습 권고/승인 대기";
+          // 권고 당시 기록일 뿐 — 승인/거절 최신 상태는 백엔드 '재학습 승인 현황'이 권위
+          : "재학습 권고함(승인 여부는 '재학습 승인 현황' 참조)";
     const tools = (e.steps || []).map(s => s.name).join(", ") || "없음";
     const final = (e.finalText || "").trim().replace(/\s+/g, " ").slice(0, 200);
     lines.push(`- ${e.ts} · 자율=${e.autonomy} · ${outcome} · 툴=[${tools}]${final ? ` · 판단: ${final}` : ""}`);
