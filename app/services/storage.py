@@ -8,19 +8,22 @@ from pathlib import Path
 
 import numpy as np
 
-from app.services import object_store
-from app.services.config import DB_PATH, MODEL_VERSION, ensure_runtime_dirs
+from app.services import db, object_store
+from app.services.config import DB_PATH, MODEL_VERSION
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def connect() -> sqlite3.Connection:
-    ensure_runtime_dirs()
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def connect():
+    """Backend-aware connection (SQLite or PostgreSQL), chosen by STORAGE_BACKEND.
+
+    Used as ``with connect() as conn: conn.execute(...)`` throughout this module;
+    db.connect() returns either a sqlite3.Connection or a psycopg2 adapter that
+    exposes the same execute/executemany/executescript surface.
+    """
+    return db.connect()
 
 
 def init_db() -> None:
@@ -474,12 +477,12 @@ def production_model() -> dict[str, object]:
 
 def insert_model(version: str, stage: str, f1_score: float, latency_p95_ms: int) -> None:
     with connect() as conn:
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO model_registry (version, stage, f1_score, latency_p95_ms, registered_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
+        db.upsert(
+            conn,
+            "model_registry",
+            ["version", "stage", "f1_score", "latency_p95_ms", "registered_at"],
             (version, stage, f1_score, latency_p95_ms, utc_now()),
+            conflict="version",
         )
 
 
@@ -996,11 +999,10 @@ def upsert_rag_document(
     if embedding is not None:
         embedding_blob = struct.pack(f"{len(embedding)}f", *embedding)
     with connect() as conn:
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO rag_documents (id, content, defect_type, embedding, metadata_json)
-            VALUES (?, ?, ?, ?, ?)
-            """,
+        db.upsert(
+            conn,
+            "rag_documents",
+            ["id", "content", "defect_type", "embedding", "metadata_json"],
             (
                 doc_id,
                 content,
@@ -1008,6 +1010,7 @@ def upsert_rag_document(
                 embedding_blob,
                 json.dumps(metadata or {}, ensure_ascii=False),
             ),
+            conflict="id",
         )
 
 
@@ -1044,6 +1047,7 @@ def query_rag(query_vec: list[float], k: int = 3) -> list[dict]:
         if blob is None:
             no_embedding_rows.append(doc)
             continue
+        blob = bytes(blob)  # psycopg2 BYTEA → memoryview; sqlite → bytes
         n = len(blob) // 4
         vec = np.array(struct.unpack(f"{n}f", blob), dtype=np.float32)
         vec_norm = np.linalg.norm(vec)
@@ -1064,9 +1068,8 @@ def query_rag(query_vec: list[float], k: int = 3) -> list[dict]:
     return result
 
 
-def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
-    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-    if column not in existing:
+def _ensure_column(conn, table: str, column: str, ddl: str) -> None:
+    if column not in db.table_columns(conn, table):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
@@ -1092,7 +1095,7 @@ def db_overview() -> dict[str, object]:
         tables = []
         for name in BROWSABLE_TABLES:
             count = conn.execute(f"SELECT COUNT(*) AS count FROM {name}").fetchone()["count"]
-            columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({name})").fetchall()]
+            columns = db.table_columns(conn, name)
             tables.append({"name": name, "row_count": count, "columns": columns})
     db_file = Path(DB_PATH)
     return {
@@ -1108,7 +1111,7 @@ def browse_table(name: str, limit: int = 50, offset: int = 0) -> dict[str, objec
     limit = max(1, min(limit, 200))
     offset = max(0, offset)
     with connect() as conn:
-        columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({name})").fetchall()]
+        columns = db.table_columns(conn, name)
         total = conn.execute(f"SELECT COUNT(*) AS count FROM {name}").fetchone()["count"]
         if "created_at" in columns:
             order = "created_at DESC"

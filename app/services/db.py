@@ -59,7 +59,18 @@ class _PgConn:
 
     def execute(self, sql: str, params=()):
         cur = self._conn.cursor()
-        cur.execute(_translate(sql), params)
+        if params:
+            # Translate placeholders + escape literal % only when params are
+            # bound (psycopg2 does %-interpolation only then). Parameterless
+            # queries pass through verbatim so literal % (e.g. LIKE 'x%') stays.
+            cur.execute(_translate(sql), params)
+        else:
+            cur.execute(sql)
+        return cur
+
+    def executemany(self, sql: str, seq_of_params):
+        cur = self._conn.cursor()
+        cur.executemany(_translate(sql), seq_of_params)
         return cur
 
     def executescript(self, sql: str):
@@ -126,13 +137,15 @@ def upsert(conn, table: str, columns: list[str], values, conflict: str = "id") -
     conn.execute(sql, values)
 
 
-def table_columns(conn, table: str) -> set[str]:
-    """Existing column names of a table (PRAGMA ↔ information_schema)."""
+def table_columns(conn, table: str) -> list[str]:
+    """Existing column names of a table, in definition order (PRAGMA ↔
+    information_schema)."""
     if backend() == "postgres":
         rows = conn.execute(
-            "SELECT column_name AS name FROM information_schema.columns WHERE table_name = ?",
+            "SELECT column_name AS name FROM information_schema.columns "
+            "WHERE table_name = ? ORDER BY ordinal_position",
             (table,),
         ).fetchall()
-        return {row["name"] for row in rows}
+        return [row["name"] for row in rows]
     rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
-    return {row["name"] for row in rows}
+    return [row["name"] for row in rows]
