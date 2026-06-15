@@ -548,6 +548,29 @@ def insert_retraining_job(job: dict[str, object]) -> None:
         )
 
 
+def update_retraining_job(job_id: str, status: str, f1_score: float | None = None) -> None:
+    """Flip a job's status (e.g. running -> completed), optionally setting its F1."""
+    with connect() as conn:
+        if f1_score is None:
+            conn.execute(
+                "UPDATE retraining_jobs SET status = ? WHERE id = ?", (status, job_id)
+            )
+        else:
+            conn.execute(
+                "UPDATE retraining_jobs SET status = ?, f1_score = ? WHERE id = ?",
+                (status, f1_score, job_id),
+            )
+
+
+def running_retraining_job() -> dict[str, object] | None:
+    """The most recent still-training job, or None — used to enforce one-at-a-time."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM retraining_jobs WHERE status = 'running' ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def insert_alert(severity: str, channel: str, content: str) -> None:
     alert_id = f"ALT-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S%f')}"
     with connect() as conn:
@@ -851,6 +874,25 @@ def insert_pending_approval(
             ),
         )
     return approval_id
+
+
+def get_approval(approval_id: str) -> dict | None:
+    """Fetch a single approval by id (incl. its current status + engineer comment).
+
+    Lets the agent reconcile a past ``recommend_retrain`` recommendation with how a
+    human eventually ruled on it (approved/rejected) instead of assuming pending.
+    """
+    if not approval_id:
+        return None
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM pending_approvals WHERE id = ?", (approval_id,)
+        ).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    d["payload"] = json.loads(d.pop("payload_json", "{}"))
+    return d
 
 
 def list_pending_approvals(status: str = "pending") -> list[dict]:

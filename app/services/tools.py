@@ -197,6 +197,28 @@ def enqueue_for_review(inspection_id: str, reason: str) -> dict:
 #  alert tool — it only cluttered the MLOps pending-approvals queue.)
 # ---------------------------------------------------------------------------
 
+def _retrain_in_progress(storage) -> dict | None:
+    """Return the in-flight retrain (a running job or a Staging candidate), else None.
+
+    Used to enforce one-model-at-a-time for *auto* execution. Approval mode does
+    NOT use this — a recommendation should still surface a card for the engineer.
+    """
+    if storage is None:
+        return None
+    running = getattr(storage, "running_retraining_job", None)
+    if running is not None:
+        try:
+            job = running()
+        except Exception:  # noqa: BLE001
+            job = None
+        if job is not None:
+            return job
+    try:
+        return next((m for m in storage.current_models() if m.get("stage") == "Staging"), None)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def execute_retrain_decision(reason: str, mode: str = "approval") -> dict:
     """Carry out a retraining recommendation according to the agent's autonomy mode.
 
@@ -207,31 +229,26 @@ def execute_retrain_decision(reason: str, mode: str = "approval") -> dict:
     """
     storage = _get_storage()
 
-    # You can only train one model at a time, so don't stack up retrain work.
-    # If a candidate is already in Staging (trained, awaiting promotion), or an
-    # approval is already queued, fold into that instead of starting another.
-    if storage is not None:
-        try:
-            staging = next((m for m in storage.current_models() if m.get("stage") == "Staging"), None)
-        except Exception:  # noqa: BLE001
-            staging = None
-        if staging is not None:
+    if mode == "auto":
+        # Fully autonomous: run the retraining simulation right away — but only one
+        # model trains at a time. If a candidate is already training (a running job)
+        # or sitting in Staging awaiting promotion, skip instead of stacking up.
+        busy = _retrain_in_progress(storage)
+        if busy is not None:
+            label = busy.get("candidate_version") or busy.get("version")
             return {
                 "ok": True,
-                "mode": mode,
+                "mode": "auto",
                 "executed": False,
                 "skipped": True,
-                "candidate_version": staging.get("version"),
-                "f1_score": staging.get("f1_score"),
+                "candidate_version": label,
                 "message": (
-                    f"이미 학습된 후보 {staging.get('version')}가 Staging에 있습니다. "
-                    "한 번에 하나만 학습할 수 있으니 먼저 승급 또는 거절하세요."
+                    f"이미 진행 중인 재학습({label})이 있어 자동 실행을 건너뜁니다. "
+                    "한 번에 하나만 학습합니다."
                 ),
             }
-
-    if mode == "auto":
-        # Fully autonomous: run the retraining simulation right away.
         try:
+            from app.services.config import RETRAIN_DURATION_SECONDS  # noqa: PLC0415
             from app.services.mlops import simulate_retraining  # noqa: PLC0415
             from app.services.schemas import RetrainRequest  # noqa: PLC0415
 
@@ -244,9 +261,13 @@ def execute_retrain_decision(reason: str, mode: str = "approval") -> dict:
                 "ok": True,
                 "mode": "auto",
                 "executed": True,
+                "status": "running",
                 "candidate_version": job.get("candidate_version"),
                 "f1_score": job.get("f1_score"),
-                "message": "재학습이 자동 실행되어 신규 모델이 Staging에 등록되었습니다.",
+                "message": (
+                    f"재학습을 자동 실행했습니다. 약 {RETRAIN_DURATION_SECONDS}초 후 "
+                    "신규 모델이 Staging에 등록됩니다."
+                ),
             }
         except Exception as exc:  # noqa: BLE001
             logger.warning("auto retrain execution failed: %s", exc)
@@ -382,6 +403,45 @@ def get_mlops_state() -> dict:
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("get_mlops_state failed: %s", exc)
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# Tool 8b: get_model_registry  (full lifecycle view for the MLOps agent)
+# ---------------------------------------------------------------------------
+
+def get_model_registry() -> dict:
+    """Full model registry + retraining status — the MLOps agent's window into the
+    model lifecycle.
+
+    Returns every registered model grouped by stage (Production / Staging /
+    Archived), the recent retraining jobs, and whether a candidate is training
+    right now. Use this to answer "현재 모델 상태 / 레지스트리 / 재학습 현황" and to
+    avoid recommending a retrain while one is already in progress.
+    """
+    try:
+        from app.services.mlops import pipeline_state  # noqa: PLC0415
+
+        state = pipeline_state()
+        models = state.get("models", []) or []
+        by_stage: dict[str, list] = {"Production": [], "Staging": [], "Archived": []}
+        for m in models:
+            by_stage.setdefault(str(m.get("stage", "Other")), []).append(m)
+        jobs = state.get("recent_retraining_jobs") or []
+        running = [j for j in jobs if j.get("status") == "running"]
+        return {
+            "production_model": next((m for m in models if m.get("stage") == "Production"), None),
+            "staging_candidates": by_stage.get("Staging", []),
+            "archived_count": len(by_stage.get("Archived", [])),
+            "total_models": len(models),
+            "registry": models,
+            "recent_retraining_jobs": jobs[:5],
+            "retrain_in_progress": bool(running),
+            "running_job": running[0] if running else None,
+            "latest_drift_event": state.get("latest_drift_event"),
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("get_model_registry failed: %s", exc)
         return {"error": str(exc)}
 
 
@@ -525,6 +585,7 @@ TOOL_REGISTRY: dict[str, Callable] = {
     "get_equipment_history": get_equipment_history,
     "get_metrology_trend": get_metrology_trend,
     "get_mlops_state": get_mlops_state,
+    "get_model_registry": get_model_registry,
     "compare_with_past_wafer": compare_with_past_wafer,
     "save_case_to_knowledge": save_case_to_knowledge,
     "escalate_to_mlops": escalate_to_mlops,
@@ -676,6 +737,19 @@ TOOL_SCHEMAS: list[dict] = [
             "description": (
                 "현재 운영 모델 성능, 최신 drift 이벤트, 최근 재학습 이력을 조회한다. "
                 "재학습을 권고하기 전에 drift 증거를 확인할 때 사용한다."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_model_registry",
+            "description": (
+                "전체 모델 레지스트리와 재학습 현황을 조회한다. Production/Staging/Archived "
+                "단계별 모델 목록, 최근 재학습 잡, 현재 학습 진행 여부(retrain_in_progress)를 "
+                "반환한다. 현재 모델 상태·레지스트리·재학습 현황을 물어볼 때, 또는 이미 "
+                "진행 중인 재학습이 있는지 확인할 때 사용한다."
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },

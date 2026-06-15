@@ -39,9 +39,12 @@ _CHAT_ADDENDUM = (
     "\n\n=== 대화 모드 ===\n"
     "지금은 위 MLOps 에이전트 역할 그대로, 엔지니어와 실시간으로 대화하는 모드입니다. 아래 규칙을 추가로 따릅니다.\n"
     "1. 아래 [모니터링 로그]가 지금까지 이 에이전트가 점검한 운영 상태와 판단 기록입니다. "
-    "'정보가 부족하다'고 되묻지 말고, 이 로그와 현재 상태를 근거로 바로 구체적으로 답합니다.\n"
-    "2. '왜 재학습을 권고했어?' / '지금 재학습이 필요해?' 류 질문에는 로그의 판단·drift score·F1·추세 수치를 인용해 설명합니다.\n"
-    "3. 로그에 없는 최신 수치(특정 설비 계측 추세, 결함 분포, 현재 모델/drift 상태)가 필요하면 도구로 직접 조회해 인용합니다. 수치는 지어내지 않습니다.\n"
+    "'정보가 부족하다'고 되묻지 말고, 이 로그와 도구 조회 결과를 근거로 바로 구체적으로 답합니다.\n"
+    "2. 현재 상태·수치를 묻는 질문(모델/레지스트리 상태, 재학습 현황, drift, 설비 계측 추세, 결함 분포 등)에는 "
+    "답하기 전에 반드시 해당 도구를 먼저 호출해 최신 값을 확인하고 그 값을 인용합니다. "
+    "예: 모델/재학습/드리프트 → get_mlops_state 또는 get_model_registry, 계측 추세 → get_metrology_trend, 설비 이력 → get_equipment_history. "
+    "로그에 값이 있어 보여도, 최신 확인을 위해 도구 호출을 우선합니다(추측·암기 금지).\n"
+    "3. '왜 그렇게 판단했어?' 같은 순수 해석 질문은 도구 없이 로그 근거로 설명해도 됩니다. 단, 인용하는 수치가 오래됐을 가능성이 있으면 도구로 다시 확인합니다.\n"
     "4. 과거 사람 피드백(담당자 코멘트 포함)이 있으면 반드시 반영합니다. 같은 조치가 과거에 반려됐다면 같은 권고를 반복하지 말고 코멘트 사유를 짚어 답합니다.\n"
     "5. recommend_retrain을 호출하면 자동 실행되지 않고 승인 대기열에 등록됩니다. 정말 필요할 때만 신중히 호출하세요.\n"
     "6. 답변은 한국어로 3~6문장 또는 번호 목록으로 간결하게. 되묻지 말고 가장 합리적인 다음 행동을 제안합니다."
@@ -50,8 +53,30 @@ _CHAT_ADDENDUM = (
 
 def _outcome_of(trace: dict) -> str:
     tools = trace.get("tool_calls") or []
-    recommended = any(t.get("name") == "recommend_retrain" for t in tools)
-    return "재학습 권고" if recommended else "현 상태 유지"
+    rec = next((t for t in tools if t.get("name") == "recommend_retrain"), None)
+    if rec is None:
+        return "현 상태 유지"
+    # Reconcile with how the human eventually ruled — a recommendation later
+    # rejected/approved must NOT keep reading as a live "재학습 권고/승인 대기".
+    result = rec.get("result") or {}
+    mode = result.get("mode")
+    if mode == "auto" or result.get("executed"):
+        return "재학습 자동 실행"
+    approval_id = result.get("approval_id")
+    if approval_id:
+        try:
+            from app.services.storage import get_approval  # noqa: PLC0415
+
+            row = get_approval(approval_id) or {}
+        except Exception:  # noqa: BLE001
+            row = {}
+        status = row.get("status")
+        if status == "rejected":
+            comment = (row.get("comment") or "").strip()
+            return f"재학습 권고 → 담당자 거절{f' (사유: {comment[:50]})' if comment else ''}"
+        if status == "approved":
+            return "재학습 권고 → 담당자 승인"
+    return "재학습 권고 (승인 대기)"
 
 
 def _monitoring_log_context(line_id: str) -> str:

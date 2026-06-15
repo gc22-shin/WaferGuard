@@ -238,6 +238,7 @@ def _get_tool_registry() -> dict[str, Any]:
             "get_equipment_history": tools.get_equipment_history,
             "get_metrology_trend": tools.get_metrology_trend,
             "get_mlops_state": tools.get_mlops_state,
+            "get_model_registry": tools.get_model_registry,
             "compare_with_past_wafer": tools.compare_with_past_wafer,
             "escalate_to_mlops": tools.escalate_to_mlops,
         }
@@ -258,6 +259,7 @@ def _stub_registry() -> dict[str, Any]:
         "get_equipment_history": lambda **kwargs: _stub(**kwargs),
         "get_metrology_trend": lambda **kwargs: _stub(**kwargs),
         "get_mlops_state": lambda **kwargs: _stub(**kwargs),
+        "get_model_registry": lambda **kwargs: _stub(**kwargs),
         "compare_with_past_wafer": lambda **kwargs: _stub(**kwargs),
         "escalate_to_mlops": lambda **kwargs: _stub(**kwargs),
     }
@@ -370,6 +372,56 @@ def _human_feedback_block(equipment_id: str | None, defect_type: str | None) -> 
         comment = (it.get("comment") or "").strip()
         if comment:
             out.append(f"    ↳ 담당자 코멘트: \"{comment[:160]}\"")
+    return "\n".join(out)
+
+
+def _retrain_approval_status_block() -> str:
+    """Authoritative, current state of retrain approvals (overrides the log).
+
+    The monitoring log labels any past ``recommend_retrain`` as "승인 대기", which
+    goes stale the moment a human approves/rejects it. This block reads the live
+    ``pending_approvals`` table so the agent knows what is *actually* still pending
+    versus already ruled on — and surfaces the engineer's rejection reason so the
+    next judgment incorporates it instead of re-recommending the same thing.
+    """
+    try:
+        from app.services.storage import (  # noqa: PLC0415
+            list_pending_approvals,
+            recent_human_feedback,
+        )
+
+        pending = [
+            a for a in list_pending_approvals("pending")
+            if a.get("tool_name") == "recommend_retrain"
+        ]
+        resolved = [
+            f for f in recent_human_feedback(None, None, limit=6)
+            if f.get("kind") == "approval"
+            and f.get("tool_name") == "recommend_retrain"
+            and f.get("decision") in ("approved", "rejected")
+        ]
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("retrain approval status lookup failed: %s", exc)
+        return ""
+
+    out = ["\n## 재학습 승인 현황 (실시간 — 모니터링 로그의 '승인 대기' 표기보다 우선)"]
+    if pending:
+        out.append(f"  - 현재 대기 중인 재학습 승인 요청: {len(pending)}건")
+        for a in pending[:3]:
+            reason = (a.get("reason") or "").strip()
+            out.append(f"    · [대기중] {reason[:110]}")
+    else:
+        out.append("  - 현재 대기 중인 재학습 승인 요청: 없음")
+    if resolved:
+        out.append("  - 최근 담당자 결정 (이 결정과 사유를 다음 판단에 반영):")
+        for f in resolved[:4]:
+            decision = "승인" if f.get("decision") == "approved" else "거절"
+            reason = (f.get("reason") or "").strip()
+            reason_txt = f" — 권고사유: {reason[:70]}" if reason else ""
+            out.append(f"    · [{decision}]{reason_txt}")
+            comment = (f.get("comment") or "").strip()
+            if comment:
+                out.append(f"      ↳ 담당자 사유: \"{comment[:160]}\"")
     return "\n".join(out)
 
 
@@ -645,6 +697,7 @@ def _drive_and_persist(
 
 _MLOPS_TOOL_NAMES = {
     "get_mlops_state",
+    "get_model_registry",
     "get_metrology_trend",
     "get_equipment_history",
     "recommend_retrain",
@@ -665,13 +718,17 @@ _MLOPS_SYSTEM_PROMPT = """당신은 WaferGuard MLOps 에이전트입니다.
 
 규칙:
 1. 먼저 get_mlops_state로 현재 운영 모델 성능(F1), 최신 drift 이벤트, 최근 재학습 이력을 확인합니다.
+   모델 레지스트리 전체(Production/Staging/Archived 단계별 목록)와 재학습 진행 현황,
+   현재 학습 중인 후보가 있는지(retrain_in_progress)를 자세히 보려면 get_model_registry를 사용합니다.
 2. 입력 분포가 실제로 밀리는지 보려면 get_metrology_trend(equipment_id, metric)로 주요 설비 계측 추세를 확인합니다.
 3. 결함 구성이 바뀌었는지 보려면 get_equipment_history(equipment_id)로 결함 분포를 확인합니다.
 4. drift score가 임계치를 넘고 + 성능 저하/입력 분포 변화 근거가 모이면 recommend_retrain(reason)을 호출합니다.
    반드시 수치 근거를 reason에 명시합니다. (실제 처리 방식은 아래 '자율 모드'에 따라 달라집니다.)
 5. 근거가 부족하면 재학습을 권고하지 말고 "현 상태 유지 + 모니터링 지속"으로 판단합니다.
-6. 최종 판단은 한국어로 간결하게, drift score·F1·추세 수치를 인용해 작성합니다.
-7. 수치를 지어내지 않습니다. 도구로 조회한 값만 사용합니다."""
+6. '재학습 승인 현황' 섹션이 승인 대기열의 실제 최신 상태입니다. 모니터링 로그에 과거 권고가 '승인 대기'로 보여도, 이 섹션에서 '대기 없음' 또는 '거절'로 확인되면 그것이 사실입니다. 이미 거절된 권고를 아직 대기 중인 것으로 오해하지 마세요.
+7. 담당자가 거절한 재학습 권고는 같은 근거로 반복하지 않습니다. 거절 사유(담당자 사유)를 명시적으로 인용하고, 그 사유를 반영해 판단을 갱신합니다. (예: 거절 사유가 해소됐거나 새로운 악화 근거가 있을 때만 재권고)
+8. 최종 판단은 한국어로 간결하게, drift score·F1·추세 수치를 인용해 작성합니다.
+9. 수치를 지어내지 않습니다. 도구로 조회한 값만 사용합니다."""
 
 
 _AUTONOMY_PROMPT = {
@@ -738,6 +795,12 @@ def _build_mlops_evidence(line_id: str) -> str:
             lines.append("## 주요 설비(추세 조회용): " + ", ".join(equips))
     except Exception:  # noqa: BLE001
         pass
+
+    # Authoritative current state of retrain approvals — kills the stale "승인 대기"
+    # belief once an engineer has approved/rejected the recommendation.
+    approval_block = _retrain_approval_status_block()
+    if approval_block:
+        lines.append(approval_block)
 
     # Fleet-level human feedback (B-5): how engineers ruled on past retrain
     # recommendations, so the agent doesn't re-recommend something just rejected.
@@ -824,6 +887,14 @@ def _summarize_mlops_tool(name: str, result: object) -> str:
         pm = result.get("production_model") or {}
         de = result.get("latest_drift_event") or {}
         return f"운영모델 F1 {pm.get('f1_score', '?')} · drift {de.get('drift_score', '?')} ({de.get('status', '?')})"
+    if name == "get_model_registry":
+        pm = result.get("production_model") or {}
+        stg = len(result.get("staging_candidates") or [])
+        training = " · 학습 중" if result.get("retrain_in_progress") else ""
+        return (
+            f"모델 {result.get('total_models', '?')}개 (Prod {pm.get('version', '?')}, "
+            f"Staging {stg}개){training}"
+        )
     if name == "get_metrology_trend":
         return f"{result.get('metric')} {result.get('trend')} · Δ{result.get('delta')} ({result.get('pct_change')}%, n={result.get('n')})"
     if name == "get_equipment_history":
@@ -831,10 +902,14 @@ def _summarize_mlops_tool(name: str, result: object) -> str:
         return f"{result.get('equipment_id')} {result.get('window_hours')}h: 검사 {result.get('total_inspections')}건{rec}"
     if name == "recommend_retrain":
         mode = result.get("mode")
+        if result.get("skipped"):
+            return f"건너뜀 — 이미 진행 중 ({result.get('candidate_version', '?')})"
         if mode == "auto":
-            return f"자동 실행됨 → {result.get('candidate_version', '신규 모델')} (F1 {result.get('f1_score', '?')})"
+            return f"재학습 시작됨 → {result.get('candidate_version', '신규 모델')} (학습 중)"
         if mode == "notify":
             return "알림만 발송 (실행 안 함)"
+        if result.get("deduped"):
+            return f"기존 승인 요청에 합침 ({result.get('approval_id', 'pending')})"
         return f"승인 대기 등록 ({result.get('approval_id', 'pending')})"
     return "완료"
 
