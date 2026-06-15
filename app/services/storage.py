@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import struct
 from datetime import datetime, timedelta, timezone
@@ -8,18 +9,22 @@ from pathlib import Path
 
 import numpy as np
 
-from app.services.config import DB_PATH, MODEL_VERSION, ensure_runtime_dirs
+from app.services import db, object_store
+from app.services.config import DB_PATH, MODEL_VERSION
 
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def connect() -> sqlite3.Connection:
-    ensure_runtime_dirs()
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+def connect():
+    """Backend-aware connection (SQLite or PostgreSQL), chosen by STORAGE_BACKEND.
+
+    Used as ``with connect() as conn: conn.execute(...)`` throughout this module;
+    db.connect() returns either a sqlite3.Connection or a psycopg2 adapter that
+    exposes the same execute/executemany/executescript surface.
+    """
+    return db.connect()
 
 
 def init_db() -> None:
@@ -145,6 +150,14 @@ def init_db() -> None:
         _ensure_column(conn, "inspections", "process_context_json", "TEXT")
         _ensure_column(conn, "inspections", "metrology_json", "TEXT")
         _ensure_column(conn, "inspections", "action_card_json", "TEXT")
+        # Report files in object storage (S3/local) — keys, presigned on read.
+        _ensure_column(conn, "inspections", "report_csv_url", "TEXT")
+        _ensure_column(conn, "inspections", "report_pdf_url", "TEXT")
+        # Metrology values as individual columns for SQL search/aggregation.
+        _ensure_column(conn, "inspections", "cd_nm", "REAL")
+        _ensure_column(conn, "inspections", "overlay_nm", "REAL")
+        _ensure_column(conn, "inspections", "film_thickness_nm", "REAL")
+        _ensure_column(conn, "inspections", "roughness_nm", "REAL")
         # human comment captured when an approval is approved/rejected — fed back
         # to the agent as context so it learns from the engineer's reasoning.
         _ensure_column(conn, "pending_approvals", "comment", "TEXT")
@@ -217,9 +230,10 @@ def insert_inspection(record: dict[str, object]) -> None:
                 id, lot_id, wafer_id, line_id, equipment_id, process_step, recipe_id, image_source, proxy_dataset, proxy_status,
                 defect_type, confidence, risk_score, risk_level, hotspot_ratio, image_url, heatmap_url,
                 overlay_url, roi_url, roi_bbox_json, report, cases_json, process_context_json, metrology_json,
-                action_card_json, model_version, status, created_at
+                action_card_json, model_version, status, created_at,
+                report_csv_url, report_pdf_url, cd_nm, overlay_nm, film_thickness_nm, roughness_nm
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 record["id"],
@@ -250,6 +264,12 @@ def insert_inspection(record: dict[str, object]) -> None:
                 record["model_version"],
                 record["status"],
                 record["created_at"],
+                record.get("report_csv_url"),
+                record.get("report_pdf_url"),
+                record.get("cd_nm"),
+                record.get("overlay_nm"),
+                record.get("film_thickness_nm"),
+                record.get("roughness_nm"),
             ),
         )
 
@@ -458,12 +478,12 @@ def production_model() -> dict[str, object]:
 
 def insert_model(version: str, stage: str, f1_score: float, latency_p95_ms: int) -> None:
     with connect() as conn:
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO model_registry (version, stage, f1_score, latency_p95_ms, registered_at)
-            VALUES (?, ?, ?, ?, ?)
-            """,
+        db.upsert(
+            conn,
+            "model_registry",
+            ["version", "stage", "f1_score", "latency_p95_ms", "registered_at"],
             (version, stage, f1_score, latency_p95_ms, utc_now()),
+            conflict="version",
         )
 
 
@@ -561,6 +581,29 @@ def insert_alert(severity: str, channel: str, content: str) -> None:
             """,
             (alert_id, severity, channel, content, utc_now()),
         )
+    _publish_alert(severity, content)
+
+
+def _publish_alert(severity: str, content: str) -> None:
+    """Best-effort SNS publish for an alert.
+
+    No-op unless SNS_TOPIC_ARN is set, so local dev and the DB-only path are
+    unaffected. Failures are swallowed — a notification problem must never break
+    the inspection/MLOps flow that recorded the alert.
+    """
+    topic = os.environ.get("SNS_TOPIC_ARN")
+    if not topic:
+        return
+    try:
+        from app.services import aws  # noqa: PLC0415
+
+        aws.sns().publish(
+            TopicArn=topic,
+            Subject=f"[WaferGuard] {severity.upper()}"[:100],
+            Message=content,
+        )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def insert_handoff_report(report: dict[str, object]) -> None:
@@ -710,6 +753,11 @@ def _inspection_to_dict(row: sqlite3.Row) -> dict[str, object]:
         if isinstance(action_card, dict) and action_card.get("defect_type")
         else _legacy_action_card(data)
     )
+    # Convert stored object keys into browser-fetchable URLs (local path or S3
+    # presigned URL) at read time, so the DB never holds an expiring URL.
+    for field in ("image_url", "heatmap_url", "overlay_url", "roi_url", "report_csv_url", "report_pdf_url"):
+        if data.get(field):
+            data[field] = object_store.presign(data[field])
     return data
 
 
@@ -1017,11 +1065,10 @@ def upsert_rag_document(
     if embedding is not None:
         embedding_blob = struct.pack(f"{len(embedding)}f", *embedding)
     with connect() as conn:
-        conn.execute(
-            """
-            INSERT OR REPLACE INTO rag_documents (id, content, defect_type, embedding, metadata_json)
-            VALUES (?, ?, ?, ?, ?)
-            """,
+        db.upsert(
+            conn,
+            "rag_documents",
+            ["id", "content", "defect_type", "embedding", "metadata_json"],
             (
                 doc_id,
                 content,
@@ -1029,6 +1076,7 @@ def upsert_rag_document(
                 embedding_blob,
                 json.dumps(metadata or {}, ensure_ascii=False),
             ),
+            conflict="id",
         )
 
 
@@ -1065,6 +1113,7 @@ def query_rag(query_vec: list[float], k: int = 3) -> list[dict]:
         if blob is None:
             no_embedding_rows.append(doc)
             continue
+        blob = bytes(blob)  # psycopg2 BYTEA → memoryview; sqlite → bytes
         n = len(blob) // 4
         vec = np.array(struct.unpack(f"{n}f", blob), dtype=np.float32)
         vec_norm = np.linalg.norm(vec)
@@ -1085,9 +1134,8 @@ def query_rag(query_vec: list[float], k: int = 3) -> list[dict]:
     return result
 
 
-def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
-    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
-    if column not in existing:
+def _ensure_column(conn, table: str, column: str, ddl: str) -> None:
+    if column not in db.table_columns(conn, table):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
@@ -1113,7 +1161,7 @@ def db_overview() -> dict[str, object]:
         tables = []
         for name in BROWSABLE_TABLES:
             count = conn.execute(f"SELECT COUNT(*) AS count FROM {name}").fetchone()["count"]
-            columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({name})").fetchall()]
+            columns = db.table_columns(conn, name)
             tables.append({"name": name, "row_count": count, "columns": columns})
     db_file = Path(DB_PATH)
     return {
@@ -1129,7 +1177,7 @@ def browse_table(name: str, limit: int = 50, offset: int = 0) -> dict[str, objec
     limit = max(1, min(limit, 200))
     offset = max(0, offset)
     with connect() as conn:
-        columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({name})").fetchall()]
+        columns = db.table_columns(conn, name)
         total = conn.execute(f"SELECT COUNT(*) AS count FROM {name}").fetchone()["count"]
         if "created_at" in columns:
             order = "created_at DESC"

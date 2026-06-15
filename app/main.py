@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.services.config import OUTPUT_DIR, ensure_runtime_dirs
+from app.services.config import IMAGE_BACKEND, OUTPUT_DIR, ensure_runtime_dirs
 from app.services.automation import automation_status, run_automation_tick
 from app.services.copilot import ops_copilot_summary
 from app.services.data_registry import metrology_threshold_basis, proxy_dataset_manifest
@@ -81,21 +81,15 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-        "http://localhost:5175",
-        "http://127.0.0.1:5175",
-    ],
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
+# Local images are served from disk; in S3 mode they're fetched via presigned URLs.
+if IMAGE_BACKEND == "local":
+    app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")
 
 
 @app.get("/health")
@@ -539,3 +533,9 @@ def inspection_agent_stream(inspection_id: str, request: AgentStreamRequest) -> 
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+import pathlib as _pathlib
+_FRONTEND_DIST = _pathlib.Path(__file__).resolve().parents[1] / "frontend" / "dist"
+if _FRONTEND_DIST.exists():
+    app.mount("/", StaticFiles(directory=_FRONTEND_DIST, html=True), name="frontend")

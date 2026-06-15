@@ -3,7 +3,7 @@ import { Icon, Panel, Markdown, ToolCalls } from "./lib";
 import { useStream } from "./SettingsContext";
 import { useMlopsAgent } from "./MlopsAgentContext";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 const MODE_CHIP = {
   llm:   { color: "var(--accent)", label: "LLM" },

@@ -31,7 +31,7 @@ from urllib.parse import urlparse
 
 import requests
 
-from app.services.config import OUTPUT_DIR
+from app.services import object_store
 
 logger = logging.getLogger(__name__)
 
@@ -131,25 +131,23 @@ def _headers() -> dict[str, str]:
 def _to_data_uri(url: str) -> str | None:
     """Resolve an image reference into something OpenAI can actually see.
 
-    The pipeline stores images as local paths (``/outputs/images/...``) served
-    by the local FastAPI app — OpenAI's servers cannot download those, so they
-    are inlined as base64 data URIs. Public http(s) URLs pass through as-is.
-    Returns None when the file cannot be resolved (caller should skip it).
+    The pipeline stores images as object keys (``images/...``) in local disk or
+    S3 — OpenAI's servers cannot download those, so they are inlined as base64
+    data URIs via the object_store abstraction. Public http(s) URLs pass through
+    as-is. Returns None when the object cannot be resolved (caller should skip).
     """
     if url.startswith("data:"):
         return url
     parsed = urlparse(url)
     if parsed.scheme in ("http", "https") and parsed.hostname not in ("127.0.0.1", "localhost"):
         return url
-    path = parsed.path if parsed.scheme else url
-    if not path.startswith("/outputs/"):
-        return None
-    file_path = OUTPUT_DIR / path.removeprefix("/outputs/")
-    if not file_path.is_file():
+    key = parsed.path if parsed.scheme else url
+    data = object_store.read_bytes(key)
+    if data is None:
         logger.warning("Image not found for LLM call, skipping: %s", url)
         return None
-    suffix = file_path.suffix.lstrip(".").lower() or "png"
-    b64 = base64.b64encode(file_path.read_bytes()).decode("ascii")
+    suffix = (key.rsplit(".", 1)[-1] if "." in key else "png").lower() or "png"
+    b64 = base64.b64encode(data).decode("ascii")
     return f"data:image/{suffix};base64,{b64}"
 
 

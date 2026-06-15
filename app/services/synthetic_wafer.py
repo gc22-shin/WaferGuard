@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageFilter
 
-from app.services import real_wafer
+from app.services import object_store, real_wafer
 from app.services.schemas import DefectType
 
 DEFECT_TYPES: list[str] = [
@@ -35,7 +35,7 @@ def choose_defect(defect_hint: str) -> str:
 def generate_images(
     inspection_id: str,
     defect_type: DefectType,
-    output_dir: Path,
+    output_dir: Path | None = None,  # deprecated: object_store handles location
     seed: int | None = None,
 ) -> dict[str, object]:
     sample = real_wafer.sample_wafer(defect_type)
@@ -56,22 +56,19 @@ def generate_images(
     overlay = _create_overlay(wafer, heatmap)
     roi, roi_bbox = _create_roi(wafer, defect_mask)
 
-    image_path = output_dir / f"{inspection_id}_wafer.png"
-    heatmap_path = output_dir / f"{inspection_id}_heatmap.png"
-    overlay_path = output_dir / f"{inspection_id}_overlay.png"
-    roi_path = output_dir / f"{inspection_id}_roi.png"
-
-    wafer.save(image_path)
-    heatmap.save(heatmap_path)
-    overlay.save(overlay_path)
-    roi.save(roi_path)
+    # Persist via the object_store abstraction (local disk or S3 by IMAGE_BACKEND).
+    # The DB stores these canonical keys; presigning happens at read time.
+    image_key = object_store.save_image(wafer, f"images/{inspection_id}_wafer.png")
+    heatmap_key = object_store.save_image(heatmap, f"images/{inspection_id}_heatmap.png")
+    overlay_key = object_store.save_image(overlay, f"images/{inspection_id}_overlay.png")
+    roi_key = object_store.save_image(roi, f"images/{inspection_id}_roi.png")
 
     hotspot_ratio = float(defect_mask.mean())
     return {
-        "image_path": image_path,
-        "heatmap_path": heatmap_path,
-        "overlay_path": overlay_path,
-        "roi_path": roi_path,
+        "image_key": image_key,
+        "heatmap_key": heatmap_key,
+        "overlay_key": overlay_key,
+        "roi_key": roi_key,
         "roi_bbox": roi_bbox,
         "hotspot_ratio": round(hotspot_ratio, 4),
         "wafer_source": source_meta,
