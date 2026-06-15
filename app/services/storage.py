@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import struct
 from datetime import datetime, timedelta, timezone
@@ -557,6 +558,29 @@ def insert_alert(severity: str, channel: str, content: str) -> None:
             """,
             (alert_id, severity, channel, content, utc_now()),
         )
+    _publish_alert(severity, content)
+
+
+def _publish_alert(severity: str, content: str) -> None:
+    """Best-effort SNS publish for an alert.
+
+    No-op unless SNS_TOPIC_ARN is set, so local dev and the DB-only path are
+    unaffected. Failures are swallowed — a notification problem must never break
+    the inspection/MLOps flow that recorded the alert.
+    """
+    topic = os.environ.get("SNS_TOPIC_ARN")
+    if not topic:
+        return
+    try:
+        from app.services import aws  # noqa: PLC0415
+
+        aws.sns().publish(
+            TopicArn=topic,
+            Subject=f"[WaferGuard] {severity.upper()}"[:100],
+            Message=content,
+        )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def insert_handoff_report(report: dict[str, object]) -> None:
