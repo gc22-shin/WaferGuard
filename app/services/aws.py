@@ -29,25 +29,45 @@ def region() -> str:
 
 
 @functools.lru_cache(maxsize=None)
+def s3_region() -> str:
+    """The bucket's *actual* region, auto-detected via get_bucket_location.
+
+    Presigned URLs must be signed for, and hosted on, the bucket's real region or
+    S3 returns SignatureDoesNotMatch + 307. Detecting it directly removes any
+    dependence on AWS_REGION being set correctly.
+    """
+    bucket = os.environ.get("S3_BUCKET")
+    if not bucket:
+        return region()
+    try:
+        import boto3  # noqa: PLC0415
+
+        probe = boto3.client("s3", region_name=region())
+        loc = probe.get_bucket_location(Bucket=bucket).get("LocationConstraint")
+        return loc or "us-east-1"  # us-east-1 reports None
+    except Exception:  # noqa: BLE001
+        return region()
+
+
+@functools.lru_cache(maxsize=None)
 def _client(service: str):
     import boto3  # noqa: PLC0415 — lazy so local dev needs no boto3 creds
 
-    reg = region()
     if service == "s3":
-        # Force the regional endpoint + SigV4 + virtual-hosted addressing so
-        # presigned URLs for non-us-east-1 buckets (e.g. ap-northeast-2) have a
-        # host that matches the signing region. Without this, boto3 may emit the
-        # global "s3.amazonaws.com" host while signing for the bucket's region,
-        # causing SignatureDoesNotMatch + 307 redirects.
+        # Use the bucket's real region with an explicit regional endpoint + SigV4
+        # + virtual-hosted addressing, so the presigned URL's host matches the
+        # signing region (otherwise: global s3.amazonaws.com host → 307 +
+        # SignatureDoesNotMatch for non-us-east-1 buckets).
         from botocore.config import Config  # noqa: PLC0415
 
+        reg = s3_region()
         return boto3.client(
             "s3",
             region_name=reg,
             endpoint_url=f"https://s3.{reg}.amazonaws.com",
             config=Config(signature_version="s3v4", s3={"addressing_style": "virtual"}),
         )
-    return boto3.client(service, region_name=reg)
+    return boto3.client(service, region_name=region())
 
 
 def s3():
