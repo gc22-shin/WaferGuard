@@ -1,21 +1,26 @@
 # WaferGuard
 
-> **결함을 분류하는 AI가 아니라, 결함에 대응하는 AI.**
-> 상황 판단 → 근거 검색(RAG) → 품질 리스크 해석 → 대응 action으로 이어지는 하나의 운영 흐름.
+> **반도체 팹을 위한 스마트 팩토리 운영 보조 멀티 에이전트 시스템**
+>
+> 검사 결과를 받아 _상황 판단 → 근거 검색(RAG) → 품질 리스크 해석 → 대응 action_ 까지,
+> 운영자가 내려야 할 결정을 에이전트가 함께 끌고 간다.
 
-WaferGuard는 반도체 공정 이상 상황 대응을 다루는 생성형 AI 시스템이다. 단순히 wafer 결함을 분류하는 데서 멈추지 않고, "그래서 다음에 무엇을 할 것인가"를 판단하는 데 초점을 맞춘다.
+WaferGuard는 반도체 공정의 이상 상황에 **대응**하는 멀티 에이전트 시스템이다. 결함을 분류하는 데서 멈추는 모델이 아니라, "그래서 다음에 무엇을 할 것인가"를 판단하고 실제 운영 조치로 연결하는 운영 보조 에이전트다.
+
+검사 라인 단위의 **Inspection Agent**와 라인 전체를 보는 **MLOps Agent**가 위임 구조로 협업하고, 모든 판단은 RAG 근거 위에서 이뤄지며 중요한 결정에는 사람이 개입한다.
 
 ## 프로젝트 개요
 
 팹(fab)은 하루에도 수만 장의 wafer를 검사하고, 결함 분류 모델은 이미 충분히 존재한다. 현장에서 진짜 비용이 발생하는 지점은 결함을 **탐지**하는 단계가 아니라 **다음 조치를 결정**하는 단계다. 하나의 critical 결함을 놓치면 그대로 하류 공정으로 번져 lot 전체 scrap으로 이어지기 때문이다.
 
-이 판단은 지금까지 엔지니어 개인의 암묵지에 의존해 왔고, 그래서 품질이 교대 근무자에 따라 출렁였다. WaferGuard는 이 흐름을 시스템화한다.
+이 판단은 지금까지 엔지니어 개인의 암묵지에 의존해 왔고, 그래서 품질이 교대 근무자에 따라 출렁였다. WaferGuard는 이 운영 판단을 멀티 에이전트로 시스템화한다.
 
-- **룰 기반으로 먼저 리스크를 계산**하고, 의심스러운 케이스만 Agent로 escalate한다.
-- escalate된 케이스는 Agent가 **근거를 모으고 직접 조치**하되, 중요한 결정에는 **사람이 개입(human-in-the-loop)**한다.
+- **룰 기반으로 먼저 리스크를 계산**하고, 의심스러운 케이스만 에이전트로 escalate한다 — 모든 검사가 LLM을 거치지 않는다.
+- escalate된 케이스는 에이전트가 **근거를 모으고 직접 조치**하되, 중요한 결정에는 **사람이 개입(human-in-the-loop)**한다.
 - 같은 결함이 반복되는지, 단발성 spike인지, 진짜 drift인지 — 과거 사례(RAG)를 근거로 해석한다.
+- 개별 wafer를 넘어서는 문제는 상위 **MLOps 에이전트로 위임**되어 라인 전체 차원에서 재학습 여부를 판단한다.
 
-탐지는 입구일 뿐이고, 데이터는 운영 화면을 통해 흐른다.
+탐지는 입구일 뿐이고, 데이터는 운영 대시보드를 통해 사람과 에이전트 사이를 흐른다.
 
 ## 핵심 기능
 
@@ -125,86 +130,19 @@ Internet → Browser → EC2 · FastAPI  (Backend API + React 대시보드 정�
 
 > **설계 원칙**: Stateless compute + Managed state (S3·RDS) + Role-based security (IAM·Secrets) + Event-driven automation
 
-### EC2 단일 인스턴스 배포
+| AWS 서비스 | 역할 | 연동 방식 |
+|------------|------|-----------|
+| **EC2** | FastAPI 백엔드 + React 대시보드 정적 서빙 (compute) | IAM 역할 attach |
+| **S3** | wafer / Grad-CAM 이미지 저장 | 로컬 정적 마운트 → object storage |
+| **RDS (PostgreSQL)** | 검사 이력·에이전트 상태 저장 | SQLite → psycopg |
+| **Secrets Manager** | LLM API 키 보관 | `.env` 대신 역할로 fetch |
+| **SNS** | High-risk 알림 fan-out (Slack 등) | `insert_alert` → publish |
+| **CloudWatch** | 로그·메트릭 | uvicorn 로그 · `/metrics` |
+| **Lambda + EventBridge** | 90초 주기 auto-monitor (EC2와 분리, 실행당 과금) | → `/api/v1/automation/tick` |
 
-AWS Academy와 일반 AWS 모두 아래 절차로 배포한다.
+핵심은 **access key 없이 IAM 역할 권한만으로 boto3를 호출**해, EC2가 7개 서비스를 오케스트레이션하는 구조다. 로컬 MVP의 파일·SQLite 기반 저장소를 클라우드 매니지드 서비스(S3·RDS·Secrets)로 그대로 치환할 수 있도록 추상화 계층(`app/services/aws.py`, `object_store.py`, `db.py`)을 둔 것이 설계 포인트다.
 
-| 항목 | AWS Academy | 일반 AWS |
-|------|-------------|----------|
-| 인스턴스 | t2.medium | t3.medium 이상 권장 |
-| IAM 프로필 | LabInstanceProfile (사전 생성) | 커스텀 역할 직접 생성 |
-| 리전 | us-east-1 / us-west-2 | 제한 없음 |
-
-> **Elastic IP 필수**: EC2 재시작 시 공인 IP가 바뀐다. Elastic IP를 할당해 연결하면 고정 IP를 유지할 수 있다 (실행 중 무료).
-
-**1. EC2 인스턴스 준비**
-1. EC2 콘솔 → Launch Instance
-   - AMI: **Amazon Linux 2023** (64-bit x86)
-   - 스토리지: **20 GB gp3** (기본 8 GB 부족)
-   - IAM 인스턴스 프로필: LabInstanceProfile (Academy) / 커스텀 역할 (일반)
-   - 퍼블릭 IP 자동 할당: 활성화
-2. 보안 그룹 인바운드: SSH 22 (내 IP), TCP **8000** (0.0.0.0/0)
-3. EC2 → Elastic IPs → Allocate → 인스턴스에 Associate
-
-**2. 소프트웨어 설치**
-```bash
-ssh -i ~/.ssh/labsuser.pem ec2-user@<ELASTIC_IP>
-
-sudo dnf update -y
-sudo dnf install -y python3.11 python3.11-pip python3.11-devel nodejs npm git
-```
-
-**3. 코드 배포**
-```bash
-git clone https://github.com/<YOUR_REPO>/WaferGuard.git /home/ec2-user/WaferGuard
-cd /home/ec2-user/WaferGuard
-
-python3.11 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-```
-
-**4. 환경 변수 설정**
-```bash
-cat > .env << 'EOF'
-LUXIA_API_KEY=<발급받은_키>
-EOF
-chmod 600 .env
-```
-
-**5. 프론트엔드 빌드**
-```bash
-cd frontend
-npm install && npm run build   # frontend/.env.production 자동 적용 → 상대 URL 빌드
-cd ..
-```
-
-**6. 서비스 등록 및 실행**
-```bash
-sudo tee /etc/systemd/system/waferguard.service > /dev/null << 'EOF'
-[Unit]
-Description=WaferGuard FastAPI
-After=network.target
-[Service]
-User=ec2-user
-WorkingDirectory=/home/ec2-user/WaferGuard
-EnvironmentFile=/home/ec2-user/WaferGuard/.env
-ExecStart=/home/ec2-user/WaferGuard/venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 1
-Restart=on-failure
-[Install]
-WantedBy=multi-user.target
-EOF
-
-sudo systemctl daemon-reload && sudo systemctl enable --now waferguard
-```
-
-**접속 주소**
-```
-Dashboard : http://<ELASTIC_IP>:8000
-API docs  : http://<ELASTIC_IP>:8000/docs
-Health    : http://<ELASTIC_IP>:8000/health
-```
-
-> 자세한 마이그레이션·비용 가이드는 [`docs/`](docs/)의 AWS 문서를 참고한다.
+> 실제 EC2 배포 단계(인스턴스 준비 → systemd 등록)는 [`docs/AWS_Deploy_Guide.md`](docs/AWS_Deploy_Guide.md)를, 마이그레이션·비용 상세는 [`docs/`](docs/)의 AWS 문서를 참고한다.
 
 ## 사전 요구사항
 
